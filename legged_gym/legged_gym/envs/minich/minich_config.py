@@ -58,7 +58,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -1.0
-            foot_clearance = -0.01
+            foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
             feet_air_time = 0.0
@@ -70,7 +70,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_vel_limits = 0.0
             torque_limits = 0.0
 
-        base_height_target = 0.235
+        base_height_target = 0.26
         clearance_height_target = 0.04
 
     class domain_rand(LeggedRobotCfg.domain_rand):
