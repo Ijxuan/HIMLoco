@@ -33,7 +33,7 @@ import os
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import  get_args, export_policy_as_jit, task_registry, Logger
+from legged_gym.utils import  get_args, export_policy_as_jit, get_load_path, task_registry, Logger
 
 import numpy as np
 import torch
@@ -66,12 +66,32 @@ def play(args, x_vel=1.0, y_vel=0.0, yaw_vel=0.0):
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     policy = ppo_runner.get_inference_policy(device=env.device)
 
-
-    # export policy as a jit module (used to run it from C++)
+    # Export the exact checkpoint selected by --load_run/--checkpoint as TorchScript.
     if EXPORT_POLICY:
-        path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-        export_policy_as_jit(ppo_runner.alg.actor_critic, path)
-        print('Exported policy as jit script to: ', path)
+        log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
+        checkpoint_path = get_load_path(
+            log_root,
+            load_run=train_cfg.runner.load_run,
+            checkpoint=train_cfg.runner.checkpoint,
+        )
+        export_dir = os.path.join(os.path.dirname(checkpoint_path), 'exported', 'policies')
+        export_path = os.path.join(
+            export_dir,
+            os.path.splitext(os.path.basename(checkpoint_path))[0] + '.jit',
+        )
+        export_policy_as_jit(
+            ppo_runner.alg.actor_critic,
+            export_dir,
+            filename=os.path.basename(export_path),
+        )
+
+        scripted_policy = torch.jit.load(export_path, map_location='cpu').eval()
+        with torch.inference_mode():
+            test_obs = obs[:1].detach().cpu()
+            expected_actions = policy(obs[:1].detach()).cpu()
+            scripted_actions = scripted_policy(test_obs)
+        torch.testing.assert_close(scripted_actions, expected_actions, rtol=1e-5, atol=1e-6)
+        print(f'Exported checkpoint {checkpoint_path} as TorchScript: {export_path}')
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
