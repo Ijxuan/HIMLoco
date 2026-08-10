@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES.
 # SPDX-License-Identifier: BSD-3-Clause
-"""固定平地回放 Mini Cheetah HIM 策略，并输出仿真器原始足端支撑力。"""
+"""固定平地回放 Mini Cheetah HIM 策略，并只输出基座高度。"""
 
 import math
 from types import MethodType
@@ -28,7 +28,9 @@ FORWARD_S = 0.0
 TURN_S = 6.0
 STAND_AFTER_S = 6.0
 ENABLE_TERMINATION_RESET = False
-FOOT_FORCE_PRINT_INTERVAL_S = 0.1
+HEIGHT_PRINT_INTERVAL_S = 0.1
+# 设为 0.0 关闭足端支撑力打印；设为正数时按该间隔打印四足 Fz。
+FOOT_FORCE_PRINT_INTERVAL_S = 0.0
 
 # 与参考脚本相同的初始化相机视角。
 CAMERA_OFFSET = np.array([-2.5, -2.5, 1.5], dtype=np.float64)
@@ -156,12 +158,22 @@ def aim_camera_at_robot(env):
     env.set_camera(base_position + CAMERA_OFFSET, base_position + CAMERA_LOOKAT_OFFSET)
 
 
+@torch.no_grad()
+def get_base_height_above_ground(env):
+    """返回机器人 0 的世界高度、相对地面高度和目标偏差。"""
+    env.gym.refresh_actor_root_state_tensor(env.sim)
+    world_height = float(env.root_states[0, 2].item())
+    ground_relative_height = float(env._get_base_heights()[0].item())
+    target_height = float(env.cfg.rewards.base_height_target)
+    return world_height, ground_relative_height, ground_relative_height - target_height
+
+
 class FootContactForcePrinter:
-    """照参考脚本直接读取 net_contact_force_tensor 的足端 Fz。"""
+    """直接读取 Isaac Gym net-contact tensor 的四足向上支撑力。"""
 
     def __init__(self, env, interval_s):
         if interval_s <= 0.0:
-            raise ValueError("FOOT_FORCE_PRINT_INTERVAL_S must be positive")
+            raise ValueError("FOOT_FORCE_PRINT_INTERVAL_S must be positive when enabled")
         self.interval_steps = max(1, int(round(interval_s / env.dt)))
         body_names = env.gym.get_actor_rigid_body_names(env.envs[0], env.actor_handles[0])
         foot_indices = env.feet_indices.detach().cpu().tolist()
@@ -219,14 +231,28 @@ def play(args):
     obs = reset_to_fixed_state(env)
     install_termination_override(env)
     aim_camera_at_robot(env)
-    force_printer = FootContactForcePrinter(env, FOOT_FORCE_PRINT_INTERVAL_S)
     policy = runner.get_inference_policy(device=env.device)
     play_steps = total_play_steps(env.dt)
+    height_interval_steps = max(1, int(round(HEIGHT_PRINT_INTERVAL_S / env.dt)))
+    force_printer = (
+        FootContactForcePrinter(env, FOOT_FORCE_PRINT_INTERVAL_S)
+        if FOOT_FORCE_PRINT_INTERVAL_S > 0.0 else None
+    )
+    target_height = float(env.cfg.rewards.base_height_target)
     print(
         f"Flat viewer: task={TASK_NAME}, run={LOAD_RUN}, checkpoint={CHECKPOINT}; "
         f"camera_offset={CAMERA_OFFSET.tolist()}, steps={play_steps}",
         flush=True,
     )
+    print(
+        f"基座高度打印间隔: {HEIGHT_PRINT_INTERVAL_S:.3f}s, "
+        f"目标高度: {target_height:.3f}m",
+        flush=True,
+    )
+    if force_printer is None:
+        print("足端支撑力打印: 已关闭（FOOT_FORCE_PRINT_INTERVAL_S=0.0）", flush=True)
+    else:
+        print(f"足端支撑力打印间隔: {FOOT_FORCE_PRINT_INTERVAL_S:.3f}s", flush=True)
 
     for step in range(play_steps):
         phase = scheduled_phase(step, env.dt)
@@ -236,7 +262,17 @@ def play(args):
         actions = policy(obs.detach())
         # HIMLoco LeggedRobot 返回：obs、privileged_obs、reward、done、extras、termination_ids、termination_obs。
         obs, _, _, _, _, _, _ = env.step(actions.detach())
-        force_printer.sample(env, step, phase)
+        if step % height_interval_steps == 0:
+            world_height, ground_height, height_error = get_base_height_above_ground(env)
+            print(
+                f"[基座高度] t={(step + 1) * env.dt:7.2f}s, "
+                f"世界={world_height:.4f}m, "
+                f"相对地面={ground_height:.4f}m, "
+                f"相对目标={height_error:+.4f}m",
+                flush=True,
+            )
+        if force_printer is not None:
+            force_printer.sample(env, step, phase)
 
 
 if __name__ == "__main__":

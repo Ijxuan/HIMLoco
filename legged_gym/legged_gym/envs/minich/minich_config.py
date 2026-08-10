@@ -70,7 +70,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_vel_limits = 0.0
             torque_limits = 0.0
 
-        base_height_target = 0.26
+        base_height_target = 0.235
         clearance_height_target = 0.04
 
     class domain_rand(LeggedRobotCfg.domain_rand):
