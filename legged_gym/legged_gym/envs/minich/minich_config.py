@@ -13,6 +13,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
         num_actions = 12
         episode_length_s = 20
 
+    class commands(LeggedRobotCfg.commands):
+        in_place_turn_probability = 0.1
+
     class init_state(LeggedRobotCfg.init_state):
         pos = [0.0, 0.0, 0.30]
         default_joint_angles = {

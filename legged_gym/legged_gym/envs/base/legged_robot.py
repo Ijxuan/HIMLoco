@@ -443,7 +443,8 @@ class LeggedRobot(BaseTask):
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
-            self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -2., 2.)
+            heading_yaw_commands = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -2., 2.)
+            self.commands[:, 2] = torch.where(self.in_place_turn_buf, self.commands[:, 2], heading_yaw_commands)
 
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights()
@@ -465,8 +466,17 @@ class LeggedRobot(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        high_vel_env_ids = (env_ids < (self.num_envs * 0.2))
-        high_vel_env_ids = env_ids[high_vel_env_ids.nonzero(as_tuple=True)]
+        self.in_place_turn_buf[env_ids] = torch.rand(len(env_ids), device=self.device) < self.cfg.commands.in_place_turn_probability
+        in_place_turn_env_ids = env_ids[self.in_place_turn_buf[env_ids]]
+        self.commands[in_place_turn_env_ids, :2] = 0.
+        self.commands[in_place_turn_env_ids, 2] = torch_rand_float(
+            self.command_ranges["ang_vel_yaw"][0],
+            self.command_ranges["ang_vel_yaw"][1],
+            (len(in_place_turn_env_ids), 1),
+            device=self.device,
+        ).squeeze(1)
+
+        high_vel_env_ids = env_ids[(env_ids < (self.num_envs * 0.2)) & ~self.in_place_turn_buf[env_ids]]
 
         self.commands[high_vel_env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(high_vel_env_ids), 1), device=self.device).squeeze(1)
 
@@ -569,6 +579,14 @@ class LeggedRobot(BaseTask):
         move_up = distance > self.terrain.env_length / 2
         # robots that walked less than half of their required distance go to simpler terrains
         move_down = (distance < torch.norm(self.commands[env_ids, :2], dim=1)*self.max_episode_length_s*0.5) * ~move_up
+
+        # In-place turning neither advances nor demotes the terrain level after a timeout.
+        # A non-timeout termination is treated as a fall and demotes the terrain level.
+        in_place_turn = self.in_place_turn_buf[env_ids]
+        fell = ~self.time_out_buf[env_ids]
+        move_up = torch.where(in_place_turn, torch.zeros_like(move_up), move_up)
+        move_down = torch.where(in_place_turn, fell, move_down)
+
         self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one
         self.terrain_levels[env_ids] = torch.where(self.terrain_levels[env_ids]>=self.max_terrain_level,
@@ -662,6 +680,7 @@ class LeggedRobot(BaseTask):
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
+        self.in_place_turn_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
