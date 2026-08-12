@@ -17,8 +17,15 @@ from legged_gym.utils import get_args, task_registry
 # 避免以足端/小腿穿入地面的状态开始仿真。
 INITIAL_BASE_HEIGHT_M = 0.36
 TASK_NAME = "minich"
-LOAD_RUN = "Aug06_16-16-21_smoke_minich"
-CHECKPOINT = 1000
+# 第一个策略始终加载 rough_minich 日志目录中最新训练的最新 checkpoint。
+# 后两个元组为手动指定项：(显示名称, run 目录名, checkpoint 编号)。
+# 请按需替换为实际存在的 run 与 checkpoint；两个项允许暂时指向同一模型。
+POLICY_SPECS = (
+    ("latest", -1, -1),
+    ("manual_1", "Aug06_16-16-21_smoke_minich", 1000),
+    ("manual_2", "Aug06_16-16-21_smoke_minich", 1000),
+)
+ENV_SPACING_M = 1.0
 ACTION_SCALE = 0.25
 DEFAULT_POSE_HOLD_S = 1.0
 FORWARD_SPEED_M_S = 1.0
@@ -66,7 +73,8 @@ def total_play_steps(env_dt):
 
 def configure_flat_sequence_env(env_cfg):
     """仅修改回放实例；训练配置和 checkpoint 不受影响。"""
-    env_cfg.env.num_envs = 1
+    env_cfg.env.num_envs = len(POLICY_SPECS)
+    env_cfg.env.env_spacing = ENV_SPACING_M
     env_cfg.env.episode_length_s = max(20.0, DEFAULT_POSE_HOLD_S + STAND_BEFORE_S + FORWARD_S + TURN_S + STAND_AFTER_S + 1.0)
     env_cfg.init_state.pos[2] = INITIAL_BASE_HEIGHT_M
     env_cfg.terrain.mesh_type = "plane"
@@ -92,6 +100,14 @@ def configure_flat_sequence_env(env_cfg):
 def set_command(env, command):
     env.commands.zero_()
     env.commands[:, :3] = torch.as_tensor(command, device=env.device, dtype=env.commands.dtype)
+
+
+def set_line_origins(env):
+    """在单一 Isaac Gym 仿真中，将三台机器人沿 x 轴固定排开。"""
+    if env.num_envs != len(POLICY_SPECS):
+        raise ValueError("num_envs must match the number of policy specifications")
+    env.env_origins.zero_()
+    env.env_origins[:, 0] = torch.arange(env.num_envs, device=env.device) * ENV_SPACING_M
 
 
 def install_fixed_reset(env):
@@ -151,21 +167,25 @@ def install_termination_override(env):
     env.check_termination = MethodType(check_termination_without_reset, env)
 
 
-def aim_camera_at_robot(env):
+def aim_camera_at_robot_line(env):
+    """将相机对准三台机器人连线的中点。"""
     if env.viewer is None:
         return
-    base_position = env.root_states[0, :3].detach().cpu().numpy()
-    env.set_camera(base_position + CAMERA_OFFSET, base_position + CAMERA_LOOKAT_OFFSET)
+    center_position = env.root_states[:, :3].mean(dim=0).detach().cpu().numpy()
+    env.set_camera(center_position + CAMERA_OFFSET, center_position + CAMERA_LOOKAT_OFFSET)
 
 
 @torch.no_grad()
-def get_base_height_above_ground(env):
-    """返回机器人 0 的世界高度、相对地面高度和目标偏差。"""
+def get_base_heights_above_ground(env):
+    """返回每台机器狗的世界高度、相对地面高度和目标偏差。"""
     env.gym.refresh_actor_root_state_tensor(env.sim)
-    world_height = float(env.root_states[0, 2].item())
-    ground_relative_height = float(env._get_base_heights()[0].item())
+    world_heights = env.root_states[:, 2].detach().cpu().tolist()
+    ground_heights = env._get_base_heights().detach().cpu().tolist()
     target_height = float(env.cfg.rewards.base_height_target)
-    return world_height, ground_relative_height, ground_relative_height - target_height
+    return [
+        (world_height, ground_height, ground_height - target_height)
+        for world_height, ground_height in zip(world_heights, ground_heights)
+    ]
 
 
 class FootContactForcePrinter:
@@ -190,13 +210,18 @@ class FootContactForcePrinter:
         if step % self.interval_steps != 0:
             return
         env.gym.refresh_net_contact_force_tensor(env.sim)
-        forces = env.contact_forces[0, self.foot_indices]
-        support_forces = torch.clamp(forces[:, env.up_axis_idx], min=0.0)
-        values = support_forces.detach().cpu().tolist()
+        forces = env.contact_forces[:, self.foot_indices]
+        support_forces = torch.clamp(forces[:, :, env.up_axis_idx], min=0.0)
+        robot_forces = []
+        for policy_spec, values in zip(POLICY_SPECS, support_forces.detach().cpu().tolist()):
+            robot_forces.append(
+                f"{policy_spec[0]}: "
+                + ", ".join(f"{leg}={force:.3f}" for leg, force in zip(LEG_ORDER, values))
+                + f", total={sum(values):.3f}"
+            )
         print(
             f"[足端地面支撑力] t={(step + 1) * env.dt:.2f}s, phase={phase} [N]; "
-            + ", ".join(f"{leg}={force:.3f}" for leg, force in zip(LEG_ORDER, values))
-            + f", total={sum(values):.3f}",
+            + " | ".join(robot_forces),
             flush=True,
         )
 
@@ -210,28 +235,44 @@ def run_default_pose_hold(env):
         env.step(zero_actions)
 
 
+def load_policies(env, args, train_cfg):
+    """为同一个向量化环境逐一构建并加载三个独立 HIM 推理策略。"""
+    policies = []
+    for label, load_run, checkpoint in POLICY_SPECS:
+        train_cfg.runner.resume = True
+        train_cfg.runner.load_run = load_run
+        train_cfg.runner.checkpoint = checkpoint
+        runner, _ = task_registry.make_alg_runner(
+            env=env, name=TASK_NAME, args=args, train_cfg=train_cfg
+        )
+        policies.append(runner.get_inference_policy(device=env.device))
+        print(
+            f"已加载策略 {label}: run={load_run}, checkpoint={checkpoint}",
+            flush=True,
+        )
+    return policies
+
+
 def play(args):
     args.task = TASK_NAME
-    args.num_envs = 1
-    args.load_run = LOAD_RUN
-    args.checkpoint = CHECKPOINT
+    args.num_envs = len(POLICY_SPECS)
+    # make_alg_runner 读取 args 中的覆盖值；策略加载统一由 POLICY_SPECS 控制。
+    args.load_run = None
+    args.checkpoint = None
     env_cfg, train_cfg = task_registry.get_cfgs(name=TASK_NAME)
     configure_flat_sequence_env(env_cfg)
-    train_cfg.runner.resume = True
-    train_cfg.runner.load_run = LOAD_RUN
-    train_cfg.runner.checkpoint = CHECKPOINT
 
     env, _ = task_registry.make_env(name=TASK_NAME, args=args, env_cfg=env_cfg)
+    set_line_origins(env)
     install_fixed_reset(env)
-    obs = reset_to_fixed_state(env)
-    aim_camera_at_robot(env)
+    reset_to_fixed_state(env)
+    aim_camera_at_robot_line(env)
     run_default_pose_hold(env)
 
-    runner, _ = task_registry.make_alg_runner(env=env, name=TASK_NAME, args=args, train_cfg=train_cfg)
+    policies = load_policies(env, args, train_cfg)
     obs = reset_to_fixed_state(env)
     install_termination_override(env)
-    aim_camera_at_robot(env)
-    policy = runner.get_inference_policy(device=env.device)
+    aim_camera_at_robot_line(env)
     play_steps = total_play_steps(env.dt)
     height_interval_steps = max(1, int(round(HEIGHT_PRINT_INTERVAL_S / env.dt)))
     force_printer = (
@@ -240,7 +281,7 @@ def play(args):
     )
     target_height = float(env.cfg.rewards.base_height_target)
     print(
-        f"Flat viewer: task={TASK_NAME}, run={LOAD_RUN}, checkpoint={CHECKPOINT}; "
+        f"Flat viewer: task={TASK_NAME}, robots={env.num_envs}, spacing={ENV_SPACING_M:.1f}m; "
         f"camera_offset={CAMERA_OFFSET.tolist()}, steps={play_steps}",
         flush=True,
     )
@@ -259,16 +300,24 @@ def play(args):
         set_command(env, scheduled_command(step, env.dt))
         env.compute_observations()
         obs = env.get_observations()
-        actions = policy(obs.detach())
+        # 每个 checkpoint 仅为与其索引相同的一台机器狗产生动作。
+        actions = torch.cat(
+            [policy(obs[index:index + 1].detach()) for index, policy in enumerate(policies)],
+            dim=0,
+        )
         # HIMLoco LeggedRobot 返回：obs、privileged_obs、reward、done、extras、termination_ids、termination_obs。
         obs, _, _, _, _, _, _ = env.step(actions.detach())
         if step % height_interval_steps == 0:
-            world_height, ground_height, height_error = get_base_height_above_ground(env)
+            height_lines = []
+            for policy_spec, (world_height, ground_height, height_error) in zip(
+                POLICY_SPECS, get_base_heights_above_ground(env)
+            ):
+                height_lines.append(
+                    f"{policy_spec[0]}: 世界={world_height:.4f}m, "
+                    f"相对地面={ground_height:.4f}m, 相对目标={height_error:+.4f}m"
+                )
             print(
-                f"[基座高度] t={(step + 1) * env.dt:7.2f}s, "
-                f"世界={world_height:.4f}m, "
-                f"相对地面={ground_height:.4f}m, "
-                f"相对目标={height_error:+.4f}m",
+                f"[基座高度] t={(step + 1) * env.dt:7.2f}s; " + " | ".join(height_lines),
                 flush=True,
             )
         if force_printer is not None:
