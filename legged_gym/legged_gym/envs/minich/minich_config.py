@@ -72,9 +72,19 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_pos_limits = 0.0
             dof_vel_limits = 0.0
             torque_limits = 0.0
+            raibert_heuristic = -10.0
 
         base_height_target = 0.26
         clearance_height_target = 0.04
+        # Isaac Gym 固定基座、默认关节角下测得的四足矩形参数。
+        raibert_stance_center_x = -0.011010
+        raibert_stance_center_y = 0.0
+        raibert_stance_length = 0.38
+        raibert_stance_width = 0.276335
+        raibert_prediction_time = 0.25
+        raibert_contact_force_threshold = 1.0
+        raibert_vx_command_threshold = 0.05
+        raibert_yaw_command_threshold = 0.05
 
     class domain_rand(LeggedRobotCfg.domain_rand):
         # Keep the reference project's robot-level randomization defaults.

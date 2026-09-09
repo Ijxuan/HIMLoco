@@ -177,6 +177,8 @@ class LeggedRobotCfg(BaseConfig):
             feet_stumble = -0.0 
             action_rate = -0.01
             stand_still = -0.
+            # Actual-touchdown, phase-free XY foothold penalty. Disabled by default.
+            raibert_heuristic = 0.0
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
@@ -186,6 +188,16 @@ class LeggedRobotCfg(BaseConfig):
         base_height_target = 1.
         max_contact_force = 100. # forces above this value are penalized
         clearance_height_target = 0.09
+
+        # Phase-free Raibert touchdown target, in the explicit [FL, FR, RL, RR] order.
+        raibert_stance_center_x = 0.0  # [m], nominal foothold rectangle center in body frame
+        raibert_stance_center_y = 0.0  # [m], nominal foothold rectangle center in body frame
+        raibert_stance_length = 0.38  # [m]
+        raibert_stance_width = 0.25  # [m]
+        raibert_prediction_time = 0.25  # [s], fixed command preview horizon
+        raibert_contact_force_threshold = 1.0  # [N], Fz > threshold means contact
+        raibert_vx_command_threshold = 0.05  # [m/s]
+        raibert_yaw_command_threshold = 0.05  # [rad/s]
 
     class normalization:
         class obs_scales:

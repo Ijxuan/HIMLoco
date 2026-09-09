@@ -191,6 +191,8 @@ class LeggedRobot(BaseTask):
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
+        self.raibert_last_contacts[env_ids] = False
+        self.raibert_contact_initialized[env_ids] = False
         self.reset_buf[env_ids] = 1
 
         # update height measurements
@@ -684,6 +686,8 @@ class LeggedRobot(BaseTask):
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.raibert_last_contacts = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
+        self.raibert_contact_initialized = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
@@ -899,6 +903,21 @@ class LeggedRobot(BaseTask):
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
+
+        # Raibert uses an explicit [FL, FR, RL, RR] order. Existing rewards
+        # continue using the original Isaac Gym feet_indices order.
+        raibert_feet_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
+        raibert_indices = []
+        raibert_order = []
+        for foot_name in raibert_feet_names:
+            matches = [name for name in feet_names if name == foot_name]
+            if len(matches) != 1:
+                raise ValueError(f"expected exactly one body named {foot_name}, found {matches}")
+            raibert_indices.append(self.gym.find_actor_rigid_body_handle(
+                self.envs[0], self.actor_handles[0], foot_name))
+            raibert_order.append(feet_names.index(foot_name))
+        self.raibert_foot_indices = torch.tensor(raibert_indices, dtype=torch.long, device=self.device)
+        self.raibert_foot_order = torch.tensor(raibert_order, dtype=torch.long, device=self.device)
 
         self.penalised_contact_indices = torch.zeros(len(penalized_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(penalized_contact_names)):
@@ -1239,3 +1258,46 @@ class LeggedRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+    def _reward_raibert_heuristic(self):
+        """Penalize touchdown XY error using actual contact edges only.
+
+        The target is computed from the current command and current body yaw.
+        No gait phase, desired contact state, liftoff snapshot, or air-time is
+        used, so the term cannot impose a phase schedule on the policy.
+        """
+        contact = self.contact_forces[:, self.raibert_foot_indices, 2] > self.cfg.rewards.raibert_contact_force_threshold
+        newly_initialized = ~self.raibert_contact_initialized
+        touchdown = contact & ~self.raibert_last_contacts & ~newly_initialized.unsqueeze(1)
+        self.raibert_last_contacts = contact
+        self.raibert_contact_initialized |= torch.ones_like(self.raibert_contact_initialized)
+
+        command_active = (
+            (torch.abs(self.commands[:, 0]) > self.cfg.rewards.raibert_vx_command_threshold)
+            | (torch.abs(self.commands[:, 2]) > self.cfg.rewards.raibert_yaw_command_threshold)
+        )
+        touchdown &= command_active.unsqueeze(1)
+        if not torch.any(touchdown):
+            return torch.zeros(self.num_envs, device=self.device)
+
+        half_length = 0.5 * self.cfg.rewards.raibert_stance_length
+        half_width = 0.5 * self.cfg.rewards.raibert_stance_width
+        stance_center_x = self.cfg.rewards.raibert_stance_center_x
+        stance_center_y = self.cfg.rewards.raibert_stance_center_y
+        x_nom = torch.tensor([half_length, half_length, -half_length, -half_length], device=self.device) + stance_center_x
+        y_nom = torch.tensor([half_width, -half_width, half_width, -half_width], device=self.device) + stance_center_y
+        vx_cmd = self.commands[:, 0:1]
+        wz_cmd = self.commands[:, 2:3]
+        prediction_time = self.cfg.rewards.raibert_prediction_time
+        desired_xy = torch.stack((
+            x_nom.unsqueeze(0) + 0.5 * prediction_time * (vx_cmd - wz_cmd * y_nom.unsqueeze(0)),
+            y_nom.unsqueeze(0) + 0.5 * prediction_time * (wz_cmd * x_nom.unsqueeze(0)),
+        ), dim=-1)
+
+        foot_world_relative = self.feet_pos[:, self.raibert_foot_order, :] - self.root_states[:, :3].unsqueeze(1)
+        foot_body = quat_rotate_inverse(
+            self.base_quat.repeat_interleave(4, dim=0),
+            foot_world_relative.reshape(-1, 3),
+        ).view(self.num_envs, 4, 3)
+        error = torch.sum(torch.square(foot_body[:, :, :2] - desired_xy), dim=-1)
+        return torch.sum(error * touchdown, dim=1)
