@@ -6,11 +6,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class env(LeggedRobotCfg.env):
         num_envs = 4096
-        num_one_step_observations = 45
+        # 12 joint states are retained, while the two front/rear HAA pairs
+        # share one action each: 10 policy actions drive 12 physical DOFs.
+        num_one_step_observations = 43
         num_observations = num_one_step_observations * 6
-        num_one_step_privileged_obs = 45 + 3 + 3 + 187
+        num_one_step_privileged_obs = num_one_step_observations + 3 + 3 + 187
         num_privileged_obs = num_one_step_privileged_obs
-        num_actions = 12
+        num_actions = 10
         episode_length_s = 20
 
     class commands(LeggedRobotCfg.commands):
@@ -39,6 +41,16 @@ class MiniChRoughCfg(LeggedRobotCfg):
         damping = {"joint": 0.4, "calf_joint": 0.8}
         action_scale = 0.25
         decimation = 4
+        # Policy action order:
+        # front HAA, FL HFE, FL KFE, FR HFE, FR KFE,
+        # rear HAA, RL HFE, RL KFE, RR HFE, RR KFE.
+        # Mini-Cheetah's right HAA axis is mirrored, hence the -1 signs.
+        action_to_dof = [
+            [(0, 1.0), (3, -1.0)],
+            1, 2, 4, 5,
+            [(6, 1.0), (9, -1.0)],
+            7, 8, 10, 11,
+        ]
 
     class asset(LeggedRobotCfg.asset):
         file = "{LEGGED_GYM_ROOT_DIR}/resources/robots/mini_cheetah/urdf/mini_cheetah.urdf"

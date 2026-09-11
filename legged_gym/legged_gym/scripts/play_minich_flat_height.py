@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES.
 # SPDX-License-Identifier: BSD-3-Clause
-"""固定平地回放 Mini Cheetah HIM 策略，并只输出基座高度。"""
+"""固定平地回放 Mini Cheetah HIM 策略，可输出基座高度、姿态和足端支撑力。"""
 
 import math
 from pathlib import Path
@@ -33,12 +33,14 @@ ACTION_SCALE = 0.25
 DEFAULT_POSE_HOLD_S = 1.0
 FORWARD_SPEED_M_S = 1.0#前进速度
 TURN_YAW_RATE_RAD_S = 1.5
-STAND_BEFORE_S = 5.0#关节模式
+STAND_BEFORE_S = 6.0#关节模式
 FORWARD_S = 0.0#前进时间
-TURN_S = 60.0#旋转时间
+TURN_S = 6.0#旋转时间
 STAND_AFTER_S = 10.0#后站立时间
 ENABLE_TERMINATION_RESET = False
 HEIGHT_PRINT_INTERVAL_S = 1.0
+# 设为 0.0 关闭基座 IMU 角度打印；正数为打印间隔（仿真秒），输出单位为度。
+IMU_PRINT_INTERVAL_S = 1.0
 # 设为 0.0 关闭足端支撑力打印；设为正数时按该间隔打印四足 Fz。
 FOOT_FORCE_PRINT_INTERVAL_S = 0.0
 
@@ -201,6 +203,20 @@ def get_base_heights_above_ground(env):
         (world_height, ground_height, ground_height - target_height)
         for world_height, ground_height in zip(world_heights, ground_heights)
     ]
+
+
+@torch.no_grad()
+def get_base_imu_angles_deg(env):
+    """将基座世界系四元数 (x, y, z, w) 转为 ZYX 欧拉角 roll/pitch/yaw（度）。
+
+    使用仿真姿态真值；roll/yaw 范围为 [-180, 180]，pitch 为 [-90, 90]。
+    """
+    env.gym.refresh_actor_root_state_tensor(env.sim)
+    x, y, z, w = env.root_states[:, 3:7].unbind(dim=-1)
+    roll = torch.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+    pitch = torch.asin(torch.clamp(2.0 * (w * y - z * x), min=-1.0, max=1.0))
+    yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    return (torch.stack((roll, pitch, yaw), dim=-1) * (180.0 / math.pi)).cpu().tolist()
 
 
 class FootContactForcePrinter:
@@ -424,6 +440,10 @@ def play(args):
         max(1, int(round(HEIGHT_PRINT_INTERVAL_S / env.dt)))
         if HEIGHT_PRINT_INTERVAL_S > 0.0 else None
     )
+    imu_interval_steps = (
+        max(1, int(round(IMU_PRINT_INTERVAL_S / env.dt)))
+        if IMU_PRINT_INTERVAL_S > 0.0 else None
+    )
     force_printer = (
         FootContactForcePrinter(env, FOOT_FORCE_PRINT_INTERVAL_S)
         if FOOT_FORCE_PRINT_INTERVAL_S > 0.0 else None
@@ -442,6 +462,10 @@ def play(args):
         )
     else:
         print("基座高度打印: 已关闭（HEIGHT_PRINT_INTERVAL_S=0.0）", flush=True)
+    if imu_interval_steps is None:
+        print("基座 IMU 角度打印: 已关闭（IMU_PRINT_INTERVAL_S=0.0）", flush=True)
+    else:
+        print(f"基座 IMU 角度打印间隔: {IMU_PRINT_INTERVAL_S:.3f}s，单位: 度", flush=True)
     if force_printer is None:
         print("足端支撑力打印: 已关闭（FOOT_FORCE_PRINT_INTERVAL_S=0.0）", flush=True)
     else:
@@ -473,6 +497,17 @@ def play(args):
                 )
             print(
                 f"[基座高度] t={(step + 1) * env.dt:7.2f}s; " + " | ".join(height_lines),
+                flush=True,
+            )
+        if imu_interval_steps is not None and step % imu_interval_steps == 0:
+            imu_lines = [
+                f"{policy_spec[0]}: roll={roll:+.2f}°, pitch={pitch:+.2f}°, yaw={yaw:+.2f}°"
+                for policy_spec, (roll, pitch, yaw) in zip(
+                    POLICY_SPECS, get_base_imu_angles_deg(env)
+                )
+            ]
+            print(
+                f"[基座 IMU 角度] t={(step + 1) * env.dt:7.2f}s; " + " | ".join(imu_lines),
                 flush=True,
             )
         if force_printer is not None:

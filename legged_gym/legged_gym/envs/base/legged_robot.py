@@ -500,7 +500,8 @@ class LeggedRobot(BaseTask):
             [torch.Tensor]: Torques sent to the simulation
         """
         #pd controller
-        actions_scaled = actions * self.cfg.control.action_scale
+        actions_for_dofs = self._expand_actions_to_dofs(actions)
+        actions_scaled = actions_for_dofs * self.cfg.control.action_scale
         actions_scaled[:, [0, 3, 6, 9]] *=self.cfg.control.hip_reduction
         self.joint_pos_target = self.default_dof_pos + actions_scaled
 
@@ -514,6 +515,29 @@ class LeggedRobot(BaseTask):
         else:
             raise NameError(f"Unknown controller type: {control_type}")
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
+    def _expand_actions_to_dofs(self, actions):
+        """Expand policy actions to all DOFs, including coupled actuators.
+
+        A paired HAA actuator uses opposite signs on the left and right joint,
+        so one action represents symmetric inward/outward motion. The policy
+        action buffer remains reduced; observations and recurrent history keep
+        the reduced action dimension as well.
+        """
+        action_to_dof = self.cfg.control.action_to_dof
+        if action_to_dof is None:
+            return actions
+
+        expanded = torch.zeros(
+            self.num_envs, self.num_dof, dtype=actions.dtype, device=actions.device
+        )
+        for action_index, dof_mapping in enumerate(action_to_dof):
+            if isinstance(dof_mapping, int):
+                expanded[:, dof_mapping] = actions[:, action_index]
+            else:
+                for dof_index, sign in dof_mapping:
+                    expanded[:, dof_index] = actions[:, action_index] * sign
+        return expanded
 
     def _reset_dofs(self, env_ids):
         """ Resets DOF position and velocities of selected environmments

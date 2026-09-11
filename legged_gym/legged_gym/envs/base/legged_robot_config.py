@@ -91,6 +91,10 @@ class LeggedRobotCfg(BaseConfig):
 
     class control:
         control_type = 'P' # P: position, V: velocity, T: torques
+        # Optional reduced actuator mapping. Each entry is either a DOF index
+        # or a list of (dof_index, sign) pairs driven by one policy action.
+        # An empty value keeps the legacy one-action-per-DOF behavior.
+        action_to_dof = None
         # PD Drive parameters:
         stiffness = {'joint_a': 10.0, 'joint_b': 15.}  # [N*m/rad]
         damping = {'joint_a': 1.0, 'joint_b': 1.5}     # [N*m*s/rad]
