@@ -60,7 +60,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             orientation = -0.2
             dof_acc = -2.5e-7
             joint_power = -2e-5
-            base_height = -1.0
+            base_height = -30.0
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
