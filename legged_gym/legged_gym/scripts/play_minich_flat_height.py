@@ -24,8 +24,8 @@ TASK_NAME = "minich"
 # 前两个元组为手动指定项：(显示名称, run 目录名, checkpoint 编号)。
 # 请按需替换为实际存在的 run 与 checkpoint；两个项允许暂时指向同一模型。
 POLICY_SPECS = (
-    ("manual_1", "Aug06_16-16-21_smoke_minich", 1000),
-    ("manual_2", "Aug06_16-16-21_smoke_minich", 1000),
+    ("manual_1", "Sep12_10-10-23_coupled_hip_test", -1),
+    ("manual_2", "Sep12_10-10-23_coupled_hip_test", -1),
     ("latest", -1, -1),
 )
 ENV_SPACING_M = 1.0
@@ -34,8 +34,8 @@ DEFAULT_POSE_HOLD_S = 1.0
 FORWARD_SPEED_M_S = 1.0#前进速度
 TURN_YAW_RATE_RAD_S = 1.5
 STAND_BEFORE_S = 6.0#关节模式
-FORWARD_S = 0.0#前进时间
-TURN_S = 6.0#旋转时间
+FORWARD_S = 3.0#前进时间
+TURN_S = 20.0#旋转时间
 STAND_AFTER_S = 10.0#后站立时间
 ENABLE_TERMINATION_RESET = False
 HEIGHT_PRINT_INTERVAL_S = 1.0

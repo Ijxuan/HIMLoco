@@ -255,13 +255,13 @@ class LeggedRobot(BaseTask):
                                     ),dim=-1)
         # add noise if needed
         if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
+            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[:self.num_one_step_obs]
 
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
+            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[self.num_one_step_obs:(self.num_one_step_obs + 187)]
             current_obs = torch.cat((current_obs, heights), dim=-1)
 
         self.obs_buf = torch.cat((current_obs[:, :self.num_one_step_obs], self.obs_buf[:, :-self.num_one_step_obs]), dim=-1)
@@ -277,13 +277,13 @@ class LeggedRobot(BaseTask):
                                     ),dim=-1)
         # add noise if needed
         if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
+            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[:self.num_one_step_obs]
 
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
+            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[self.num_one_step_obs:(self.num_one_step_obs + 187)]
             current_obs = torch.cat((current_obs, heights), dim=-1)
 
         return current_obs
@@ -300,13 +300,13 @@ class LeggedRobot(BaseTask):
                                     ),dim=-1)
         # add noise if needed
         if self.add_noise:
-            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
+            current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[:self.num_one_step_obs]
 
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements 
-            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions+187)]
+            heights += (2 * torch.rand_like(heights) - 1) * self.noise_scale_vec[self.num_one_step_obs:(self.num_one_step_obs + 187)]
             current_obs = torch.cat((current_obs, heights), dim=-1)
 
         return torch.cat((current_obs[:, :self.num_one_step_privileged_obs], self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs]), dim=-1)[env_ids]
@@ -647,21 +647,24 @@ class LeggedRobot(BaseTask):
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
         # noise_vec = torch.zeros_like(self.obs_buf[0])\
+        # Observation layout: commands(3), angular velocity(3), gravity(3),
+        # physical DOF position/velocity(2*num_dof), policy actions(num_actions).
+        one_step_obs_without_heights = 9 + 2 * self.num_dof + self.num_actions
         if self.cfg.terrain.measure_heights:
-            noise_vec = torch.zeros(9 + 3*self.num_actions + 187, device=self.device)
+            noise_vec = torch.zeros(one_step_obs_without_heights + 187, device=self.device)
         else:
-            noise_vec = torch.zeros(9 + 3*self.num_actions, device=self.device)
+            noise_vec = torch.zeros(one_step_obs_without_heights, device=self.device)
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
         noise_vec[0:3] = 0. # commands
         noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
         noise_vec[6:9] = noise_scales.gravity * noise_level
-        noise_vec[9:(9 + self.num_actions)] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-        noise_vec[(9 + self.num_actions):(9 + 2 * self.num_actions)] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[(9 + 2 * self.num_actions):(9 + 3 * self.num_actions)] = 0. # previous actions
+        noise_vec[9:(9 + self.num_dof)] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
+        noise_vec[(9 + self.num_dof):(9 + 2 * self.num_dof)] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
+        noise_vec[(9 + 2 * self.num_dof):(9 + 2 * self.num_dof + self.num_actions)] = 0. # previous actions
         if self.cfg.terrain.measure_heights:
-            noise_vec[(9 + 3 * self.num_actions):(9 + 3 * self.num_actions + 187)] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
+            noise_vec[one_step_obs_without_heights:(one_step_obs_without_heights + 187)] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
         #noise_vec[232:] = 0
         return noise_vec
 
@@ -697,9 +700,9 @@ class LeggedRobot(BaseTask):
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
-        self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.torques = torch.zeros(self.num_envs, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        self.p_gains = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        self.d_gains = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
