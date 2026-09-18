@@ -23,24 +23,29 @@ TASK_NAME = "minich"
 # 最右侧机器人始终加载 rough_minich 日志目录中最新训练的最新 checkpoint。
 # 前两个元组为手动指定项：(显示名称, run 目录名, checkpoint 编号)。
 # 请按需替换为实际存在的 run 与 checkpoint；两个项允许暂时指向同一模型。
+# POLICY_SPECS = (
+#     ("manual_1", "Aug06_16-16-21_smoke_minich", 1000),
+#     ("manual_2", "Aug06_16-16-21_smoke_minich", 1000),
+#     ("latest", -1, -1),
+# )
 POLICY_SPECS = (
     ("manual_1", "Aug06_16-16-21_smoke_minich", 1000),
-    ("manual_2", "Aug06_16-16-21_smoke_minich", 1000),
+    ("manual_2", -1, 600),
     ("latest", -1, -1),
 )
 ENV_SPACING_M = 1.0
 ACTION_SCALE = 0.25
 DEFAULT_POSE_HOLD_S = 1.0
 FORWARD_SPEED_M_S = 1.0#前进速度
-TURN_YAW_RATE_RAD_S = 1.5
-STAND_BEFORE_S = 5.0#关节模式
+TURN_YAW_RATE_RAD_S = -0.25#旋转速度
+STAND_BEFORE_S = 1.0#前站立时间
 FORWARD_S = 0.0#前进时间
-TURN_S = 60.0#旋转时间
-STAND_AFTER_S = 10.0#后站立时间
+TURN_S = 20.0#旋转时间
+STAND_AFTER_S = 20.0#后站立时间
 ENABLE_TERMINATION_RESET = False
 HEIGHT_PRINT_INTERVAL_S = 1.0
 # 设为 0.0 关闭基座 IMU 角度打印；正数为打印间隔（仿真秒），输出单位为度。
-IMU_PRINT_INTERVAL_S = 1.0
+IMU_PRINT_INTERVAL_S = 0.0
 # 设为 0.0 关闭足端支撑力打印；设为正数时按该间隔打印四足 Fz。
 FOOT_FORCE_PRINT_INTERVAL_S = 0.0
 

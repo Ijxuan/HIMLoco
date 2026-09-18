@@ -584,7 +584,10 @@ class LeggedRobot(BaseTask):
 
         # In-place turning neither advances nor demotes the terrain level after a timeout.
         # A non-timeout termination is treated as a fall and demotes the terrain level.
-        in_place_turn = self.in_place_turn_buf[env_ids]
+        in_place_turn = (
+            (torch.norm(self.commands[env_ids, :2], dim=1) < 0.1)
+            & (torch.abs(self.commands[env_ids, 2]) > 0.2)
+        )
         fell = ~self.time_out_buf[env_ids]
         move_up = torch.where(in_place_turn, torch.zeros_like(move_up), move_up)
         move_down = torch.where(in_place_turn, fell, move_down)
@@ -1234,15 +1237,31 @@ class LeggedRobot(BaseTask):
         return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
 
     def _reward_feet_air_time(self):
-        # Reward long steps
+        # Score air time at touchdown; optionally use a target interval.
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         contact_filt = torch.logical_or(contact, self.last_contacts) 
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
-        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        target = getattr(self.cfg.rewards, "feet_air_time_target", None)
+        if target is None:
+            air_time_score = self.feet_air_time - 0.5
+        else:
+            lower = self.cfg.rewards.feet_air_time_min
+            upper = self.cfg.rewards.feet_air_time_max
+            if not 0.0 <= lower < target < upper:
+                raise ValueError("Expected 0 <= feet_air_time_min < feet_air_time_target < feet_air_time_max")
+            # Piecewise linear: +1 at target, zero at bounds, negative outside.
+            width = torch.where(self.feet_air_time < target, target - lower, upper - target)
+            air_time_score = 1.0 - torch.abs(self.feet_air_time - target) / width
+        rew_airTime = torch.sum(air_time_score * first_contact, dim=1)
+        # 仅目标为原地旋转时奖励；平移和原地静止均不奖励。
+        in_place_turn = (
+            (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+            & (torch.abs(self.commands[:, 2]) > 0.2)
+        )
+        rew_airTime *= in_place_turn
         self.feet_air_time *= ~contact_filt
         return rew_airTime
     

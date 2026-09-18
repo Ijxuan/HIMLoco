@@ -57,14 +57,14 @@ class MiniChRoughCfg(LeggedRobotCfg):
             tracking_ang_vel = 1.0
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
-            orientation = -0.2
+            orientation = -1.2
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
-            feet_air_time = 0.0
+            feet_air_time = 1.0
             collision = 0.0
             termination = 0.0
             torques = 0.0
@@ -75,6 +75,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             raibert_heuristic = -10.0
 
         base_height_target = 0.26
+        # Touchdown reward: +1 at target, 0 at bounds, negative outside.
+        feet_air_time_target = 0.25
+        feet_air_time_min = 0.20
+        feet_air_time_max = 0.30
         clearance_height_target = 0.04
         # Isaac Gym 固定基座、默认关节角下测得的四足矩形参数。
         raibert_stance_center_x = -0.011010
