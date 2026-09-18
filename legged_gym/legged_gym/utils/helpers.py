@@ -107,11 +107,16 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
         #TODO sort by date to handle change of month
         runs.sort()
         if 'exported' in runs: runs.remove('exported')
-        last_run = os.path.join(root, runs[-1])
+        if not runs:
+            raise ValueError("No runs in this directory: " + root)
     except:
         raise ValueError("No runs in this directory: " + root)
     if load_run==-1:
-        load_run = last_run
+        load_run = os.path.join(root, runs[-1])
+    elif load_run==-2:
+        if len(runs) < 2:
+            raise ValueError("Need at least two runs in this directory: " + root)
+        load_run = os.path.join(root, runs[-2])
     else:
         load_run = os.path.join(root, load_run)
 
@@ -119,6 +124,12 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
         models = [file for file in os.listdir(load_run) if 'model' in file]
         models.sort(key=lambda m: '{0:0>15}'.format(m))
         model = models[-1]
+    elif checkpoint==-2:
+        models = [file for file in os.listdir(load_run) if 'model' in file]
+        models.sort(key=lambda m: '{0:0>15}'.format(m))
+        if len(models) < 2:
+            raise ValueError("Need at least two model checkpoints in: " + load_run)
+        model = models[-2]
     else:
         model = "model_{}.pt".format(checkpoint) 
 

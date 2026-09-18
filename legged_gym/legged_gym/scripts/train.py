@@ -34,15 +34,43 @@ from datetime import datetime
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import get_args, task_registry
+from legged_gym.utils import export_policy_as_jit, get_args, task_registry
 import torch
+
+
+JIT_EXPORT_INTERVAL = 1000
+
+
+def export_policy(ppo_runner, filename):
+    export_dir = os.path.join(ppo_runner.log_dir, 'exported', 'policies')
+    export_policy_as_jit(ppo_runner.alg.actor_critic, export_dir, filename=filename)
+    export_path = os.path.join(export_dir, filename)
+    print(f'Exported TorchScript policy: {export_path}')
+
 
 def train(args, headless=True):
     args.headless = headless
     args.resume = False
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
-    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
+
+    remaining_iterations = train_cfg.runner.max_iterations
+    init_at_random_ep_len = True
+    try:
+        while remaining_iterations > 0:
+            iterations = min(JIT_EXPORT_INTERVAL, remaining_iterations)
+            ppo_runner.learn(
+                num_learning_iterations=iterations,
+                init_at_random_ep_len=init_at_random_ep_len,
+            )
+            export_policy(
+                ppo_runner,
+                f'model_{ppo_runner.current_learning_iteration}.jit',
+            )
+            remaining_iterations -= iterations
+            init_at_random_ep_len = False
+    finally:
+        export_policy(ppo_runner, 'latest.jit')
 
 if __name__ == '__main__':
     args = get_args()

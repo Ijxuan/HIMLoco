@@ -29,19 +29,19 @@ TASK_NAME = "minich"
 #     ("latest", -1, -1),
 # )
 POLICY_SPECS = (
-    ("manual_1", "Aug06_16-16-21_smoke_minich", 1000),
-    ("manual_2", -1, 600),
+    ("manual_1", "Sep11_10-19-10_smoke_minich", 1000),
+    ("manual_2", -2, -1),
     ("latest", -1, -1),
 )
 ENV_SPACING_M = 1.0
 ACTION_SCALE = 0.25
-DEFAULT_POSE_HOLD_S = 1.0
+DEFAULT_POSE_HOLD_S = 0.0#关节锁定时间
 FORWARD_SPEED_M_S = 1.0#前进速度
-TURN_YAW_RATE_RAD_S = -0.25#旋转速度
+TURN_YAW_RATE_RAD_S = 0.2#旋转速度
 STAND_BEFORE_S = 1.0#前站立时间
 FORWARD_S = 0.0#前进时间
-TURN_S = 20.0#旋转时间
-STAND_AFTER_S = 20.0#后站立时间
+TURN_S = 25.0#旋转时间
+STAND_AFTER_S = 0.0#后站立时间
 ENABLE_TERMINATION_RESET = False
 HEIGHT_PRINT_INTERVAL_S = 1.0
 # 设为 0.0 关闭基座 IMU 角度打印；正数为打印间隔（仿真秒），输出单位为度。
