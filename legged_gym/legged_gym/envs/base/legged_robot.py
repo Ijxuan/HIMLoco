@@ -187,6 +187,13 @@ class LeggedRobot(BaseTask):
         self._resample_commands(env_ids)
 
         # reset buffers
+        self.base_quat[env_ids] = self.root_states[env_ids, 3:7]
+        self.base_lin_vel[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.root_states[env_ids, 7:10])
+        self.base_ang_vel[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.root_states[env_ids, 10:13])
+        self.projected_gravity[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.gravity_vec[env_ids])
+        self.actions[env_ids] = 0.
+        self.disturbance[env_ids] = 0.
+        self.obs_history_reset_pending[env_ids] = True
         self.last_actions[env_ids] = 0.
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
@@ -266,6 +273,13 @@ class LeggedRobot(BaseTask):
 
         self.obs_buf = torch.cat((current_obs[:, :self.num_one_step_obs], self.obs_buf[:, :-self.num_one_step_obs]), dim=-1)
         self.privileged_obs_buf = torch.cat((current_obs[:, :self.num_one_step_privileged_obs], self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs]), dim=-1)
+
+        # Repeat the same (possibly noisy) first frame, never the previous episode.
+        reset_ids = self.obs_history_reset_pending.nonzero(as_tuple=False).flatten()
+        self.obs_buf[reset_ids] = current_obs[reset_ids, :self.num_one_step_obs].repeat(1, self.history_length)
+        privileged_history_length = self.num_privileged_obs // self.num_one_step_privileged_obs
+        self.privileged_obs_buf[reset_ids] = current_obs[reset_ids, :self.num_one_step_privileged_obs].repeat(1, privileged_history_length)
+        self.obs_history_reset_pending[reset_ids] = False
 
     def get_current_obs(self):
         current_obs = torch.cat((   self.commands[:, :3] * self.commands_scale,
@@ -672,6 +686,7 @@ class LeggedRobot(BaseTask):
 
         # initialize some data used later on
         self.common_step_counter = 0
+        self.obs_history_reset_pending = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
