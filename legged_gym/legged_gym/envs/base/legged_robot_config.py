@@ -74,6 +74,10 @@ class LeggedRobotCfg(BaseConfig):
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
         in_place_turn_probability = 0.0
+        enable_turn_to_stand = False
+        turn_to_stand_probability = 0.30
+        turn_duration_range_s = [1.0, 3.0]
+        stand_duration_range_s = [2.0, 5.0]
         class ranges:
             lin_vel_x = [-1.0, 1.0] # min max [m/s]
             lin_vel_y = [-1.0, 1.0]   # min max [m/s]

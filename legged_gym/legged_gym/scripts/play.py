@@ -52,6 +52,7 @@ def play(args, x_vel=1.0, y_vel=0.0, yaw_vel=0.0):
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.disturbance = False
     env_cfg.domain_rand.randomize_payload_mass = False
+    env_cfg.commands.enable_turn_to_stand = False
     env_cfg.commands.heading_command = False
     # env_cfg.terrain.mesh_type = 'plane'
     # prepare environment

@@ -33,6 +33,7 @@ from time import time
 from warnings import WarningMessage
 import numpy as np
 import os
+import math
 
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
@@ -49,6 +50,10 @@ from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
 
 class LeggedRobot(BaseTask):
+    COMMAND_NORMAL = 0
+    COMMAND_TURN = 1
+    COMMAND_STAND = 2
+
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         """ Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
@@ -454,13 +459,20 @@ class LeggedRobot(BaseTask):
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
         # 
-        env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
-        self._resample_commands(env_ids)
+        if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            self._update_command_stages()
+        else:
+            env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
+            self._resample_commands(env_ids)
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
             heading_yaw_commands = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -2., 2.)
-            self.commands[:, 2] = torch.where(self.in_place_turn_buf, self.commands[:, 2], heading_yaw_commands)
+            if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+                normal = self.command_stage == self.COMMAND_NORMAL
+                self.commands[:, 2] = torch.where(normal, heading_yaw_commands, self.commands[:, 2])
+            else:
+                self.commands[:, 2] = torch.where(self.in_place_turn_buf, self.commands[:, 2], heading_yaw_commands)
 
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights()
@@ -468,6 +480,42 @@ class LeggedRobot(BaseTask):
             self._push_robots()
         if self.cfg.domain_rand.disturbance and (self.common_step_counter % self.cfg.domain_rand.disturbance_interval == 0):
             self._disturbance_robots()
+        if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            self.commands[self.command_stage == self.COMMAND_STAND, :3] = 0.
+
+    def _command_duration_steps(self, duration_range):
+        """Validate a duration interval and return inclusive policy-step bounds."""
+        if len(duration_range) != 2:
+            raise ValueError("Command duration range must contain two values")
+        lower, upper = duration_range
+        if not (math.isfinite(lower) and math.isfinite(upper) and 0 < lower <= upper):
+            raise ValueError("Command duration range must be finite, positive and ordered")
+        bounds = math.ceil(lower / self.dt), math.floor(upper / self.dt)
+        if bounds[0] > bounds[1]:
+            raise ValueError("Command duration range contains no positive policy step")
+        return bounds
+
+    def _sample_command_duration(self, count, bounds):
+        return torch.randint(bounds[0], bounds[1] + 1, (count,), device=self.device)
+
+    def _update_command_stages(self):
+        """Advance independent command clocks without resetting physical/history state."""
+        self.command_steps_remaining -= 1
+        expired = (self.command_steps_remaining <= 0).nonzero(as_tuple=False).flatten()
+        old_stages = self.command_stage[expired].clone()
+        expired_turns = expired[old_stages == self.COMMAND_TURN]
+        enter_stand = torch.zeros(expired.shape, dtype=torch.bool, device=self.device)
+        enter_stand[old_stages == self.COMMAND_TURN] = (
+            torch.rand(len(expired_turns), device=self.device)
+            < self.cfg.commands.turn_to_stand_probability
+        )
+        stand_ids = expired[enter_stand]
+        self._resample_commands(expired[~enter_stand])
+        self.command_stage[stand_ids] = self.COMMAND_STAND
+        self.command_steps_remaining[stand_ids] = self._sample_command_duration(
+            len(stand_ids), self.stand_duration_steps)
+        self.in_place_turn_buf[stand_ids] = False
+        self.commands[stand_ids, :3] = 0.
 
     def _resample_commands(self, env_ids):
         """ Randommly select commands of some environments
@@ -475,6 +523,8 @@ class LeggedRobot(BaseTask):
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
+        if len(env_ids) == 0:
+            return
         self.commands[env_ids, 0] = torch_rand_float(-1.0, 1.0, (len(env_ids), 1), device=self.device).squeeze(1)
         self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
         if self.cfg.commands.heading_command:
@@ -501,6 +551,13 @@ class LeggedRobot(BaseTask):
 
         # set small commands to zero
         self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            self.command_stage[env_ids] = torch.where(
+                self.in_place_turn_buf[env_ids], self.COMMAND_TURN, self.COMMAND_NORMAL)
+            self.command_steps_remaining[env_ids] = int(self.cfg.commands.resampling_time / self.dt)
+            turn_ids = env_ids[self.in_place_turn_buf[env_ids]]
+            self.command_steps_remaining[turn_ids] = self._sample_command_duration(
+                len(turn_ids), self.turn_duration_steps)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -701,6 +758,9 @@ class LeggedRobot(BaseTask):
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
         self.in_place_turn_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
+        if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            self.command_stage = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+            self.command_steps_remaining = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
@@ -975,6 +1035,16 @@ class LeggedRobot(BaseTask):
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
+        if getattr(cfg.commands, "enable_turn_to_stand", False):
+            if not math.isfinite(self.dt) or self.dt <= 0:
+                raise ValueError("Policy step duration must be finite and positive")
+            probability = cfg.commands.turn_to_stand_probability
+            if not math.isfinite(probability) or not 0 <= probability <= 1:
+                raise ValueError("turn_to_stand_probability must be in [0, 1]")
+            if not math.isfinite(cfg.commands.resampling_time) or int(cfg.commands.resampling_time / self.dt) < 1:
+                raise ValueError("resampling_time must contain at least one policy step")
+            self.turn_duration_steps = self._command_duration_steps(cfg.commands.turn_duration_range_s)
+            self.stand_duration_steps = self._command_duration_steps(cfg.commands.stand_duration_range_s)
         self.obs_scales = self.cfg.normalization.obs_scales
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
         self.command_ranges = class_to_dict(self.cfg.commands.ranges)
