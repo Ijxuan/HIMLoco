@@ -36,6 +36,7 @@ class TestObservationHistoryReset(unittest.TestCase):
             setattr(robot, name, torch.ones(3, 12))
         robot.disturbance = torch.ones(3, 1, 3)
         robot.feet_air_time = torch.ones(3, 4)
+        robot.feet_air_time_penalty_active = torch.ones(3, 4, dtype=torch.bool)
         robot.raibert_last_contacts = torch.ones(3, 4, dtype=torch.bool)
         robot.raibert_contact_initialized = torch.ones(3, dtype=torch.bool)
         robot.obs_history_reset_pending = torch.zeros(3, dtype=torch.bool)
@@ -70,6 +71,8 @@ class TestObservationHistoryReset(unittest.TestCase):
                 robot.time_out_buf[1] = timeout
                 old_history = robot.obs_buf.clone()
                 robot.reset_idx(torch.tensor([1]))
+                self.assertFalse(robot.feet_air_time_penalty_active[1].any())
+                self.assertTrue(robot.feet_air_time_penalty_active[[0, 2]].all())
                 self.assertTrue(torch.equal(robot.obs_history_reset_pending, torch.tensor([False, True, False])))
                 torch.testing.assert_close(robot.base_lin_vel[1], torch.full((3,), 0.3))
                 torch.testing.assert_close(robot.base_ang_vel[1], torch.full((3,), 0.4))

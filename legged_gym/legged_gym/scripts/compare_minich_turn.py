@@ -1,6 +1,8 @@
 """Instrument the existing flat playback, without changing training or playback files.
 
 COMPARE_MODE=original|controlled; COMPARE_OUTPUT=<directory>.
+COMPARE_YAW_RAD_S overrides the playback command at runtime.
+COMPARE_HISTORY=playback|single selects the observation history timing.
 Use the usual playback CLI, including --seed and CPU device arguments.
 """
 import hashlib
@@ -22,6 +24,13 @@ def main():
     mode = os.environ.get("COMPARE_MODE", "original")
     if mode not in ("original", "controlled"):
         raise ValueError(mode)
+    history = os.environ.get("COMPARE_HISTORY", "playback")
+    if history not in ("playback", "single"):
+        raise ValueError(history)
+    if "COMPARE_YAW_RAD_S" in os.environ:
+        playback.TURN_YAW_RATE_RAD_S = float(os.environ["COMPARE_YAW_RAD_S"])
+        if not np.isfinite(playback.TURN_YAW_RATE_RAD_S):
+            raise ValueError("COMPARE_YAW_RAD_S must be finite")
     output = Path(os.environ["COMPARE_OUTPUT"])
     output.mkdir(parents=True, exist_ok=True)
     # Deserialization adaptation only; the original runner still loads its full state.
@@ -49,10 +58,27 @@ def main():
     original_meter = playback.install_latest_policy_reward_meter
     def install_meter(env):
         meter = original_meter(env)
+        if history == "single":
+            original_compute = env.compute_observations
+            original_step = env.step
+            inside_step = [False]
+            def compute():
+                if inside_step[0]:
+                    return original_compute()
+                env.obs_buf[:, :3] = env.commands[:, :3] * env.commands_scale
+                env.privileged_obs_buf[:, :3] = env.commands[:, :3] * env.commands_scale
+            def step(actions):
+                inside_step[0] = True
+                try:
+                    return original_step(actions)
+                finally:
+                    inside_step[0] = False
+            env.compute_observations = compute
+            env.step = step
         recording[0] = True
         return meter
     playback.install_latest_policy_reward_meter = install_meter
-    metadata = {"mode": mode, "seed": args.seed, "policies": [
+    metadata = {"mode": mode, "history_timing": history, "seed": args.seed, "policies": [
         {"label": spec[0], "path": path,
          "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
         for spec, path in zip(playback.POLICY_SPECS, paths)],
@@ -69,6 +95,8 @@ def main():
         metadata["physics_dt"] = cfg.sim.dt
         metadata["reward_names"] = list(env.episode_sums)
         metadata["dof_names"] = env.dof_names
+        body_names = env.gym.get_actor_rigid_body_names(env.envs[0], env.actor_handles[0])
+        metadata["foot_body_names"] = [body_names[i] for i in env.feet_indices.cpu().tolist()]
         metadata["torque_limits"] = env.torque_limits.cpu().tolist()
         metadata["realized_random_factors"] = {name: getattr(env, name).cpu().tolist()
             for name in ("Kp_factors", "Kd_factors", "motor_strength_factors", "com_displacements", "com_displacement")
@@ -99,7 +127,8 @@ def main():
                 result[2].cpu().numpy()[:, None],
                 contact.cpu().numpy(), env.feet_vel[:, :, :2].norm(dim=-1).cpu().numpy(),
                 env.contact_forces[:, trunk].norm(dim=-1).cpu().numpy()[:, None],
-                env.dof_pos.cpu().numpy(), env.actions.cpu().numpy()], axis=1))
+                env.dof_pos.cpu().numpy(), env.actions.cpu().numpy(),
+                env.feet_pos[:, :, 2].cpu().numpy()], axis=1))
             return result
         env.step = step
         return env, cfg
@@ -114,7 +143,8 @@ def main():
                    + ["foot_fz_" + str(i) for i in range(4)]
                    + ["foot_xy_speed_" + str(i) for i in range(4)] + ["trunk_contact_N"]
                    + ["joint_pos_" + name for name in metadata["dof_names"]]
-                   + ["action_" + name for name in metadata["dof_names"]])
+                   + ["action_" + name for name in metadata["dof_names"]]
+                   + ["foot_world_z_" + str(i) for i in range(4)])
         metadata["columns"] = columns
         np.savez_compressed(output / "samples.npz", states=np.asarray(rows),
                             torques=np.asarray(physics_torques),

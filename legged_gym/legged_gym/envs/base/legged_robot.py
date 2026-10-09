@@ -204,6 +204,7 @@ class LeggedRobot(BaseTask):
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
+        self.feet_air_time_penalty_active[env_ids] = False
         self.raibert_last_contacts[env_ids] = False
         self.raibert_contact_initialized[env_ids] = False
         self.reset_buf[env_ids] = 1
@@ -776,6 +777,7 @@ class LeggedRobot(BaseTask):
             self.command_steps_remaining = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
+        self.feet_air_time_penalty_active = torch.zeros_like(self.feet_air_time, dtype=torch.bool)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         self.raibert_last_contacts = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
         self.raibert_contact_initialized = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
@@ -1339,31 +1341,51 @@ class LeggedRobot(BaseTask):
         return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
 
     def _reward_feet_air_time(self):
-        # Score air time at touchdown; optionally use a target interval.
+        # Score normal/short flights at touchdown. With a target interval,
+        # settle the extra cost beyond the upper bound incrementally.
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         contact_filt = torch.logical_or(contact, self.last_contacts) 
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
+        previous_air_time = self.feet_air_time.clone()
         self.feet_air_time += self.dt
         target = getattr(self.cfg.rewards, "feet_air_time_target", None)
         if target is None:
             air_time_score = self.feet_air_time - 0.5
+            overdue_cost = torch.zeros_like(self.feet_air_time)
         else:
             lower = self.cfg.rewards.feet_air_time_min
             upper = self.cfg.rewards.feet_air_time_max
             if not 0.0 <= lower < target < upper:
                 raise ValueError("Expected 0 <= feet_air_time_min < feet_air_time_target < feet_air_time_max")
-            # Piecewise linear: +1 at target, zero at bounds, negative outside.
-            width = torch.where(self.feet_air_time < target, target - lower, upper - target)
-            air_time_score = 1.0 - torch.abs(self.feet_air_time - target) / width
-        rew_airTime = torch.sum(air_time_score * first_contact, dim=1)
-        # 仅目标为原地旋转时奖励；平移和原地静止均不奖励。
+            # Keep the original touchdown scores up to upper. A long flight
+            # gets zero touchdown score: its negative part is already paid.
+            touchdown_time = torch.clamp(self.feet_air_time, max=upper)
+            width = torch.where(touchdown_time < target, target - lower, upper - target)
+            air_time_score = 1.0 - torch.abs(touchdown_time - target) / width
+            # C(T)=max(T-upper,0)/(upper-target). Only pay C(T_new)-C(T_old),
+            # including the final timer increment on the touchdown step.
+            overdue_cost = (
+                torch.clamp(self.feet_air_time - upper, min=0.)
+                - torch.clamp(previous_air_time - upper, min=0.)
+            ) / (upper - target)
+        # Touchdown scores retain the original command gate. Once a flight
+        # pays overdue cost while turning, keep paying until filtered contact.
         in_place_turn = (
             (torch.norm(self.commands[:, :2], dim=1) < 0.1)
             & (torch.abs(self.commands[:, 2]) > 0.2)
         )
-        rew_airTime *= in_place_turn
+        if target is not None:
+            self.feet_air_time_penalty_active |= (
+                in_place_turn.unsqueeze(1) & (overdue_cost > 0.)
+                & ((previous_air_time > 0.) | ~contact_filt)
+            )
+        rew_airTime = torch.sum(
+            air_time_score * first_contact * in_place_turn.unsqueeze(1)
+            - overdue_cost * self.feet_air_time_penalty_active, dim=1
+        )
+        self.feet_air_time_penalty_active &= ~contact_filt
         self.feet_air_time *= ~contact_filt
         return rew_airTime
     

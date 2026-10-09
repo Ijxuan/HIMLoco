@@ -151,7 +151,7 @@ class TestCommandStages(unittest.TestCase):
             setattr(r, name, getattr(stage, name))
         self.expire_turns(r)
         names = ['root_states', 'dof_pos', 'dof_vel', 'actions', 'last_actions',
-                 'last_last_actions', 'feet_air_time', 'raibert_last_contacts',
+                 'last_last_actions', 'feet_air_time', 'feet_air_time_penalty_active', 'raibert_last_contacts',
                  'raibert_contact_initialized', 'obs_history_reset_pending', 'obs_buf',
                  'privileged_obs_buf']
         before = {name: getattr(r, name).clone() for name in names}
@@ -215,13 +215,14 @@ class TestCommandStages(unittest.TestCase):
                 self.assertTrue(torch.equal(new.commands, old.commands))
                 self.assertTrue(torch.equal(new_rng, torch.get_rng_state()))
 
-    def test_rewards_unchanged(self):
+    def test_other_rewards_unchanged(self):
         path = 'legged_gym/legged_gym/envs/base/legged_robot.py'
         before = subprocess.check_output(['git', 'show', '83fec985ffe9a30903d41e5891a1b18b74e25e8d:' + path], text=True)
         after = Path(path).read_text()
         def rewards(source):
             cls = next(x for x in ast.parse(source).body if isinstance(x, ast.ClassDef) and x.name == 'LeggedRobot')
             return {x.name: ast.dump(x) for x in cls.body if isinstance(x, ast.FunctionDef)
+                    and x.name != '_reward_feet_air_time'
                     and (x.name.startswith('_reward_') or x.name in ['compute_reward', 'post_physics_step'])}
         self.assertEqual(rewards(before), rewards(after))
 
@@ -266,6 +267,7 @@ class TestCommandStages(unittest.TestCase):
         r.contact_forces[:, :, 2] = 2.
         r.last_contacts = torch.zeros(1, 4, dtype=torch.bool)
         r.feet_air_time = torch.full((1, 4), 0.23)
+        r.feet_air_time_penalty_active = torch.zeros(1, 4, dtype=torch.bool)
         self.assertEqual(r._reward_feet_air_time().item(), 0.)
         self.assertTrue(torch.all(r.feet_air_time == 0))
 

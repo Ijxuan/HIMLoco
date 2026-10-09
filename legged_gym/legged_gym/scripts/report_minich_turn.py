@@ -14,14 +14,16 @@ def metrics(meta, data, robot):
     s = data["states"][:, robot]
     c = {name: i for i, name in enumerate(meta["columns"])}
     assert len(s) == round(sum(meta["schedule_s"]) / dt), "Unexpected samples"
-    assert len(data["torques"]) == len(s) * 4, "Unexpected physics samples"
+    decimation = meta["env_config"]["control"]["decimation"]
+    assert len(data["torques"]) == len(s) * decimation, "Unexpected physics samples"
     assert np.isfinite(s).all() and np.isfinite(data["torques"]).all()
     yaw = np.unwrap(np.deg2rad(s[:, c["yaw_deg"]]))
     start = round(meta["schedule_s"][0] / dt)
     end = start + round(meta["schedule_s"][2] / dt)
     out = {}
-    for phase, lo, hi, command in (("turn", start, end, .2),
-                                    ("turn_steady", start + round(2 / dt), end, .2),
+    command_yaw = meta["yaw_command_rad_s"]
+    for phase, lo, hi, command in (("turn", start, end, command_yaw),
+                                    ("turn_steady", start + round(2 / dt), end, command_yaw),
                                     ("stand_after", end, len(s), 0),
                                     ("stand_after_steady", end + round(2 / dt), len(s), 0)):
         a = s[lo:hi]
@@ -29,8 +31,8 @@ def metrics(meta, data, robot):
         xy_start = s[lo-1, [c["x"], c["y"]]]
         rp = a[:, [c["roll_deg"], c["pitch_deg"]]]
         wz = a[:, c["body_wz"]]
-        torque = data["torques"][lo*4:hi*4, robot]
-        velocity = data["joint_velocities"][lo*4:hi*4, robot]
+        torque = data["torques"][lo*decimation:hi*decimation, robot]
+        velocity = data["joint_velocities"][lo*decimation:hi*decimation, robot]
         contacts = a[:, [c["foot_fz_" + str(i)] for i in range(4)]] > 5
         feet_speed = a[:, [c["foot_xy_speed_" + str(i)] for i in range(4)]]
         power = np.abs(torque * velocity)
