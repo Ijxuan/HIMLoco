@@ -53,6 +53,7 @@ class LeggedRobot(BaseTask):
     COMMAND_NORMAL = 0
     COMMAND_TURN = 1
     COMMAND_STAND = 2
+    COMMAND_TURN_TO_STAND = 3
 
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         """ Parses the provided config file,
@@ -490,7 +491,13 @@ class LeggedRobot(BaseTask):
         lower, upper = duration_range
         if not (math.isfinite(lower) and math.isfinite(upper) and 0 < lower <= upper):
             raise ValueError("Command duration range must be finite, positive and ordered")
-        bounds = math.ceil(lower / self.dt), math.floor(upper / self.dt)
+        # Sim dt may originate from a float32. Snap near-integer boundaries
+        # before ceil/floor, including fixed-duration intervals such as 10 s.
+        def step_boundary(seconds):
+            value = seconds / self.dt
+            nearest = round(value)
+            return nearest if math.isclose(value, nearest, rel_tol=1e-7, abs_tol=1e-7) else value
+        bounds = math.ceil(step_boundary(lower)), math.floor(step_boundary(upper))
         if bounds[0] > bounds[1]:
             raise ValueError("Command duration range contains no positive policy step")
         return bounds
@@ -502,13 +509,8 @@ class LeggedRobot(BaseTask):
         """Advance independent command clocks without resetting physical/history state."""
         self.command_steps_remaining -= 1
         expired = (self.command_steps_remaining <= 0).nonzero(as_tuple=False).flatten()
-        old_stages = self.command_stage[expired].clone()
-        expired_turns = expired[old_stages == self.COMMAND_TURN]
-        enter_stand = torch.zeros(expired.shape, dtype=torch.bool, device=self.device)
-        enter_stand[old_stages == self.COMMAND_TURN] = (
-            torch.rand(len(expired_turns), device=self.device)
-            < self.cfg.commands.turn_to_stand_probability
-        )
+        # The scenario is selected at command sampling, not at turn expiry.
+        enter_stand = self.command_stage[expired] == self.COMMAND_TURN_TO_STAND
         stand_ids = expired[enter_stand]
         self._resample_commands(expired[~enter_stand])
         self.command_stage[stand_ids] = self.COMMAND_STAND
@@ -532,7 +534,16 @@ class LeggedRobot(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        self.in_place_turn_buf[env_ids] = torch.rand(len(env_ids), device=self.device) < self.cfg.commands.in_place_turn_probability
+        draw = torch.rand(len(env_ids), device=self.device)
+        long_turn = draw < self.cfg.commands.in_place_turn_probability
+        if getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            short_turn = (
+                (draw >= self.cfg.commands.in_place_turn_probability)
+                & (draw < self.cfg.commands.in_place_turn_probability + self.cfg.commands.turn_to_stand_probability)
+            )
+        else:
+            short_turn = torch.zeros_like(long_turn)
+        self.in_place_turn_buf[env_ids] = long_turn | short_turn
         in_place_turn_env_ids = env_ids[self.in_place_turn_buf[env_ids]]
         self.commands[in_place_turn_env_ids, :2] = 0.
         self.commands[in_place_turn_env_ids, 2] = torch_rand_float(
@@ -554,10 +565,12 @@ class LeggedRobot(BaseTask):
         if getattr(self.cfg.commands, "enable_turn_to_stand", False):
             self.command_stage[env_ids] = torch.where(
                 self.in_place_turn_buf[env_ids], self.COMMAND_TURN, self.COMMAND_NORMAL)
+            self.command_stage[env_ids[short_turn]] = self.COMMAND_TURN_TO_STAND
             self.command_steps_remaining[env_ids] = int(self.cfg.commands.resampling_time / self.dt)
-            turn_ids = env_ids[self.in_place_turn_buf[env_ids]]
-            self.command_steps_remaining[turn_ids] = self._sample_command_duration(
-                len(turn_ids), self.turn_duration_steps)
+            self.command_steps_remaining[env_ids[long_turn]] = self.long_turn_duration_steps
+            short_turn_ids = env_ids[short_turn]
+            self.command_steps_remaining[short_turn_ids] = self._sample_command_duration(
+                len(short_turn_ids), self.turn_duration_steps)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -1038,13 +1051,17 @@ class LeggedRobot(BaseTask):
         if getattr(cfg.commands, "enable_turn_to_stand", False):
             if not math.isfinite(self.dt) or self.dt <= 0:
                 raise ValueError("Policy step duration must be finite and positive")
-            probability = cfg.commands.turn_to_stand_probability
-            if not math.isfinite(probability) or not 0 <= probability <= 1:
-                raise ValueError("turn_to_stand_probability must be in [0, 1]")
+            probabilities = (cfg.commands.in_place_turn_probability, cfg.commands.turn_to_stand_probability)
+            if any(not math.isfinite(p) or not 0 <= p <= 1 for p in probabilities):
+                raise ValueError("Command scenario probability must be in [0, 1]")
+            if sum(probabilities) > 1:
+                raise ValueError("Command scenario probability sum must be <= 1")
             if not math.isfinite(cfg.commands.resampling_time) or int(cfg.commands.resampling_time / self.dt) < 1:
                 raise ValueError("resampling_time must contain at least one policy step")
             self.turn_duration_steps = self._command_duration_steps(cfg.commands.turn_duration_range_s)
             self.stand_duration_steps = self._command_duration_steps(cfg.commands.stand_duration_range_s)
+            long_duration = cfg.commands.in_place_turn_duration_s
+            self.long_turn_duration_steps = self._command_duration_steps([long_duration, long_duration])[0]
         self.obs_scales = self.cfg.normalization.obs_scales
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
         self.command_ranges = class_to_dict(self.cfg.commands.ranges)

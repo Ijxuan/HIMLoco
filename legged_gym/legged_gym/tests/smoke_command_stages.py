@@ -23,7 +23,7 @@ def main():
             setattr(cfg.domain_rand, name, False)
     cfg.commands.curriculum = False
     cfg.commands.enable_turn_to_stand = True
-    cfg.commands.in_place_turn_probability = 1.
+    cfg.commands.in_place_turn_probability = 0.
     cfg.commands.turn_to_stand_probability = 1.
     env, _ = task_registry.make_env(name='minich', args=args, env_cfg=cfg)
     print('Environment source:', __import__('inspect').getfile(type(env)), flush=True)
@@ -46,9 +46,9 @@ def main():
                     resets.append({'step': step + 1, 'env': i})
                     turns_to_stand[i] = stands_to_turn[i] = 0
                     continue
-                if previous[i] == env.COMMAND_TURN and env.command_stage[i] == env.COMMAND_STAND:
+                if previous[i] == env.COMMAND_TURN_TO_STAND and env.command_stage[i] == env.COMMAND_STAND:
                     turns_to_stand[i] += 1
-                if previous[i] == env.COMMAND_STAND and env.command_stage[i] == env.COMMAND_TURN:
+                if previous[i] == env.COMMAND_STAND and env.command_stage[i] == env.COMMAND_TURN_TO_STAND:
                     stands_to_turn[i] += 1
                     successful[i] = successful[i] or turns_to_stand[i] > 0
             stand = env.command_stage == env.COMMAND_STAND

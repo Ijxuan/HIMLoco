@@ -33,6 +33,7 @@ import copy
 import torch
 import numpy as np
 import random
+from datetime import datetime
 from isaacgym import gymapi
 from isaacgym import gymutil
 import torch.nn.functional as F
@@ -102,11 +103,23 @@ def parse_sim_params(args, cfg):
     return sim_params
 
 def get_load_path(root, load_run=-1, checkpoint=-1):
+    def run_sort_key(run):
+        months = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+        try:
+            date, time, *_ = run.split('_')
+            month = months.index(date[:3]) + 1
+            hour, minute, second = map(int, time.split('-'))
+            # Run names omit the year; use a leap year to also accept Feb29.
+            timestamp = datetime(2000, month, int(date[3:]), hour, minute, second)
+        except (ValueError, IndexError):
+            timestamp = datetime.min
+        return timestamp, run
+
     try:
-        runs = os.listdir(root)
-        #TODO sort by date to handle change of month
-        runs.sort()
-        if 'exported' in runs: runs.remove('exported')
+        runs = [run for run in os.listdir(root)
+                if run != 'exported' and os.path.isdir(os.path.join(root, run))]
+        runs.sort(key=run_sort_key)
         if not runs:
             raise ValueError("No runs in this directory: " + root)
     except:

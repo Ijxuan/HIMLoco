@@ -19,18 +19,19 @@ class TestCommandStages(unittest.TestCase):
         r.device, r.num_envs, r.dt = 'cpu', n, 0.02
         r.cfg = types.SimpleNamespace(
             commands=types.SimpleNamespace(enable_turn_to_stand=enabled,
-                turn_to_stand_probability=0.3, turn_duration_range_s=[1., 3.],
+                turn_to_stand_probability=0.1, turn_duration_range_s=[1., 3.],
                 stand_duration_range_s=[2., 5.], resampling_time=10.,
-                in_place_turn_probability=0.1, heading_command=True),
+                in_place_turn_probability=0.1, in_place_turn_duration_s=10., heading_command=True),
             terrain=types.SimpleNamespace(measure_heights=False),
             domain_rand=types.SimpleNamespace(push_robots=False, disturbance=False))
         r.command_ranges = {'lin_vel_x': [-1., 1.], 'lin_vel_y': [-1., 1.],
-                            'ang_vel_yaw': [-3.14, 3.14], 'heading': [-3.14, 3.14]}
+                            'ang_vel_yaw': [-1., 1.], 'heading': [-3.14, 3.14]}
         r.commands = torch.zeros(n, 4)
         r.in_place_turn_buf = torch.zeros(n, dtype=torch.bool)
         r.command_stage = torch.zeros(n, dtype=torch.long)
         r.command_steps_remaining = torch.full((n,), 500, dtype=torch.long)
         r.turn_duration_steps = r._command_duration_steps([1., 3.])
+        r.long_turn_duration_steps = 500
         r.stand_duration_steps = r._command_duration_steps([2., 5.])
         r.episode_length_buf = torch.ones(n, dtype=torch.long)
         r.common_step_counter = 1
@@ -39,42 +40,62 @@ class TestCommandStages(unittest.TestCase):
         return r
 
     def expire_turns(self, r):
-        r.command_stage[:] = r.COMMAND_TURN
+        r.command_stage[:] = r.COMMAND_TURN_TO_STAND
         r.in_place_turn_buf[:] = True
         r.commands[:, 2] = 0.5
         r.command_steps_remaining[:] = 1
 
     def test_probability_endpoints_and_no_double_transition(self):
-        for p in [0., 1.]:
+        for short in [False, True]:
             r = self.make_robot()
-            self.expire_turns(r)
-            r.cfg.commands.turn_to_stand_probability = p
+            r.cfg.commands.in_place_turn_probability = 0. if short else 1.
+            r.cfg.commands.turn_to_stand_probability = 1. if short else 0.
+            r._resample_commands(torch.arange(r.num_envs))
+            expected = r.COMMAND_TURN_TO_STAND if short else r.COMMAND_TURN
+            self.assertTrue(torch.all(r.command_stage == expected))
+            r.command_steps_remaining[:] = 1
             sample = r._resample_commands
             r._resample_commands = Mock(wraps=sample)
             r._update_command_stages()
             ids = r._resample_commands.call_args.args[0]
-            self.assertEqual(len(ids), 8 if p == 0 else 0)
-            if p == 1:
+            self.assertEqual(len(ids), 0 if short else 8)
+            if short:
                 self.assertTrue(torch.all(r.command_stage == r.COMMAND_STAND))
                 self.assertTrue(torch.all(r.commands[:, :3] == 0))
                 self.assertFalse(r.in_place_turn_buf.any())
                 self.assertTrue(torch.all(r.command_steps_remaining >= 100))
+            else:
+                self.assertTrue(torch.all(r.command_stage == r.COMMAND_TURN))
+                self.assertTrue(torch.all(r.command_steps_remaining == 500))
 
-    def test_conditional_probability(self):
+    def test_scenario_probabilities_and_uniform_yaw(self):
         torch.manual_seed(2026)
-        r = self.make_robot(12000)
-        self.expire_turns(r)
-        r.command_stage[10000:] = r.COMMAND_NORMAL
+        r = self.make_robot(120000)
+        r._resample_commands(torch.arange(r.num_envs))
+        for stage, expected in [(r.COMMAND_NORMAL, .8), (r.COMMAND_TURN, .1), (r.COMMAND_TURN_TO_STAND, .1)]:
+            self.assertAlmostEqual((r.command_stage == stage).float().mean().item(), expected, delta=.003)
+        long = r.command_stage == r.COMMAND_TURN
+        short = r.command_stage == r.COMMAND_TURN_TO_STAND
+        self.assertTrue(torch.all(r.command_steps_remaining[long] == 500))
+        self.assertTrue(torch.all((r.command_steps_remaining[short] >= 50) & (r.command_steps_remaining[short] <= 150)))
+        self.assertTrue(torch.all(r.commands[long | short, :2] == 0))
+        yaw = r.commands[long | short, 2]
+        self.assertTrue(torch.all((yaw >= -1) & (yaw <= 1)))
+        self.assertAlmostEqual(yaw.mean().item(), 0, delta=.015)
+        self.assertAlmostEqual(yaw.square().mean().item(), 1 / 3, delta=.015)
+        # Only the selected short-turn scenarios enter stand on expiry.
+        r.command_steps_remaining[:] = 1
+        r.cfg.commands.in_place_turn_probability = 0.
+        r.cfg.commands.turn_to_stand_probability = 0.
         r._update_command_stages()
-        ratio = (r.command_stage[:10000] == r.COMMAND_STAND).float().mean().item()
-        self.assertTrue(0.28 <= ratio <= 0.32, ratio)
-        self.assertFalse((r.command_stage[10000:] == r.COMMAND_STAND).any())
+        self.assertTrue(torch.equal(r.command_stage == r.COMMAND_STAND, short))
 
     def test_duration_bounds_and_independent_clocks(self):
         r = self.make_robot(10000)
-        r.cfg.commands.in_place_turn_probability = 1.
+        r.cfg.commands.in_place_turn_probability = 0.
+        r.cfg.commands.turn_to_stand_probability = 1.
         r._resample_commands(torch.arange(r.num_envs))
-        self.assertTrue(torch.all(r.command_stage == r.COMMAND_TURN))
+        self.assertTrue(torch.all(r.command_stage == r.COMMAND_TURN_TO_STAND))
         self.assertEqual(r.command_steps_remaining.min().item(), 50)
         self.assertEqual(r.command_steps_remaining.max().item(), 150)
         r.command_steps_remaining[:] = 7
@@ -86,6 +107,7 @@ class TestCommandStages(unittest.TestCase):
         self.assertTrue(torch.all(r.command_steps_remaining[1:] == 6))
         r.command_steps_remaining[0] = 1
         r.cfg.commands.in_place_turn_probability = 0.
+        r.cfg.commands.turn_to_stand_probability = 0.
         r._update_command_stages()
         self.assertEqual(r.command_stage[0].item(), r.COMMAND_NORMAL)
         self.assertEqual(r.command_steps_remaining[0].item(), 500)
@@ -96,11 +118,28 @@ class TestCommandStages(unittest.TestCase):
         r.in_place_turn_buf[1] = True
         r.commands[:, 3] = 1.
         r.commands[:, 2] = 0.7
-        for _ in range(5):
-            r._post_physics_step_callback()
-            self.assertAlmostEqual(r.commands[0, 2].item(), 0.5)
-            self.assertAlmostEqual(r.commands[1, 2].item(), 0.7)
-            self.assertTrue(torch.all(r.commands[2, :3] == 0))
+        for turn_stage in (r.COMMAND_TURN, r.COMMAND_TURN_TO_STAND):
+            r.command_stage[1] = turn_stage
+            for _ in range(5):
+                r._post_physics_step_callback()
+                self.assertAlmostEqual(r.commands[0, 2].item(), 0.5)
+                self.assertAlmostEqual(r.commands[1, 2].item(), 0.7)
+                self.assertTrue(torch.all(r.commands[2, :3] == 0))
+
+    def test_long_turn_keeps_command_for_ten_seconds(self):
+        r = self.make_robot(1)
+        r.cfg.commands.in_place_turn_probability = 1.
+        r.cfg.commands.turn_to_stand_probability = 0.
+        r._resample_commands(torch.tensor([0]))
+        command = r.commands.clone()
+        r.cfg.commands.in_place_turn_probability = 0.
+        for _ in range(499):
+            r._update_command_stages()
+            self.assertTrue(torch.equal(r.commands, command))
+            self.assertEqual(r.command_stage[0].item(), r.COMMAND_TURN)
+        self.assertEqual(r.command_steps_remaining[0].item(), 1)
+        r._update_command_stages()
+        self.assertEqual(r.command_stage[0].item(), r.COMMAND_NORMAL)
 
     def test_continuity_and_observation_roll(self):
         r = history_tests.TestObservationHistoryReset().make_robot()
@@ -108,10 +147,9 @@ class TestCommandStages(unittest.TestCase):
         r.device, r.dt = stage.device, stage.dt
         r.cfg.commands = stage.cfg.commands
         for name in ['command_stage', 'command_steps_remaining', 'in_place_turn_buf',
-                     'turn_duration_steps', 'stand_duration_steps', 'command_ranges']:
+                     'turn_duration_steps', 'long_turn_duration_steps', 'stand_duration_steps', 'command_ranges']:
             setattr(r, name, getattr(stage, name))
         self.expire_turns(r)
-        r.cfg.commands.turn_to_stand_probability = 1.
         names = ['root_states', 'dof_pos', 'dof_vel', 'actions', 'last_actions',
                  'last_last_actions', 'feet_air_time', 'raibert_last_contacts',
                  'raibert_contact_initialized', 'obs_history_reset_pending', 'obs_buf',
@@ -133,8 +171,9 @@ class TestCommandStages(unittest.TestCase):
             r.cfg.commands = stage.cfg.commands
             r.cfg.commands.curriculum = False
             r.cfg.commands.in_place_turn_probability = 0.
+            r.cfg.commands.turn_to_stand_probability = 0.
             for name in ['command_stage', 'command_steps_remaining', 'in_place_turn_buf',
-                         'turn_duration_steps', 'stand_duration_steps', 'command_ranges']:
+                         'turn_duration_steps', 'long_turn_duration_steps', 'stand_duration_steps', 'command_ranges']:
                 setattr(r, name, getattr(stage, name))
             r._resample_commands = types.MethodType(LeggedRobot._resample_commands, r)
             r.command_stage[:] = r.COMMAND_STAND
@@ -153,7 +192,7 @@ class TestCommandStages(unittest.TestCase):
     def test_legacy_sampling_and_timing(self):
         # Execute the pre-change methods against identical fixtures and RNG seeds.
         path = 'legged_gym/legged_gym/envs/base/legged_robot.py'
-        source = subprocess.check_output(['git', 'show', 'HEAD:' + path], text=True)
+        source = subprocess.check_output(['git', 'show', '83fec985ffe9a30903d41e5891a1b18b74e25e8d:' + path], text=True)
         tree = ast.parse(source)
         cls = next(x for x in tree.body if isinstance(x, ast.ClassDef) and x.name == 'LeggedRobot')
         methods = [x for x in cls.body if isinstance(x, ast.FunctionDef) and
@@ -178,7 +217,7 @@ class TestCommandStages(unittest.TestCase):
 
     def test_rewards_unchanged(self):
         path = 'legged_gym/legged_gym/envs/base/legged_robot.py'
-        before = subprocess.check_output(['git', 'show', 'HEAD:' + path], text=True)
+        before = subprocess.check_output(['git', 'show', '83fec985ffe9a30903d41e5891a1b18b74e25e8d:' + path], text=True)
         after = Path(path).read_text()
         def rewards(source):
             cls = next(x for x in ast.parse(source).body if isinstance(x, ast.ClassDef) and x.name == 'LeggedRobot')
@@ -191,6 +230,13 @@ class TestCommandStages(unittest.TestCase):
         for bounds in [[0., 1.], [3., 1.], [math.nan, 2.], [0.001, 0.002], [1.]]:
             with self.assertRaises(ValueError):
                 r._command_duration_steps(bounds)
+
+    def test_fixed_duration_float_rounding(self):
+        r = self.make_robot()
+        self.assertEqual(r._command_duration_steps([1.14, 1.14]), (57, 57))
+        r.dt = 4 * float(torch.tensor(.005).item())
+        self.assertEqual(r._command_duration_steps([10., 10.]), (500, 500))
+        self.assertEqual(r._command_duration_steps([1., 3.]), (50, 150))
 
     def test_invalid_probability_and_resampling_time(self):
         for probability in [-0.1, 1.1, math.nan, math.inf]:
@@ -205,6 +251,10 @@ class TestCommandStages(unittest.TestCase):
         r.sim_params = types.SimpleNamespace(dt=0.005)
         r.cfg.commands.resampling_time = 0.001
         with self.assertRaisesRegex(ValueError, 'resampling_time'):
+            r._parse_cfg(r.cfg)
+        r.cfg.commands.resampling_time = 10.
+        r.cfg.commands.in_place_turn_probability = .95
+        with self.assertRaisesRegex(ValueError, 'probability sum'):
             r._parse_cfg(r.cfg)
 
     def test_stand_air_time_reward_remains_disabled(self):

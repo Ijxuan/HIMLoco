@@ -15,7 +15,12 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class commands(LeggedRobotCfg.commands):
         in_place_turn_probability = 0.1
+        in_place_turn_duration_s = 10.0
         enable_turn_to_stand = True
+        turn_to_stand_probability = 0.1
+
+        class ranges(LeggedRobotCfg.commands.ranges):
+            ang_vel_yaw = [-1.0, 1.0]
 
     class init_state(LeggedRobotCfg.init_state):
         pos = [0.0, 0.0, 0.30]
