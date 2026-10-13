@@ -1,0 +1,1654 @@
+{
+  "method": {
+    "height": "gravity-aligned p+hip, fixed standing offsets, subtract mean lowest two feet",
+    "standing_calibration_s": [
+      19,
+      20
+    ],
+    "offsets_m": [
+      -0.002083303472904585,
+      -0.00021477839763070494,
+      0.0002147783976306772,
+      0.0010625942075619121
+    ],
+    "thresholds_peak_mm": [
+      5,
+      10,
+      15
+    ],
+    "release_fraction": 0.5,
+    "minimum_event_s": 0.05,
+    "merge_gap_s": 0.04,
+    "smooth_samples": 15
+  },
+  "verification": {
+    "max_pair_dt_s": 0.00018900000000066086,
+    "fk_max_abs_error_m": 5.3897866891805535e-08
+  },
+  "windows": [
+    {
+      "name": "negative",
+      "start_s": 22.3,
+      "end_s": 26.1,
+      "feet": {
+        "FR": {
+          "count_complete": 3,
+          "count_censored": 0,
+          "duration_median_s": 0.11999399999999838,
+          "peak_median_mm": 18.27668747895722,
+          "height_p95_mm": 15.400419413077184,
+          "events": [
+            {
+              "window": "negative",
+              "leg": "FR",
+              "start_s": 22.581758,
+              "end_s": 22.767782999999998,
+              "duration_s": 0.18602499999999722,
+              "peak_mm": 33.421142718262715,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FR",
+              "start_s": 23.635787,
+              "end_s": 23.755781,
+              "duration_s": 0.11999399999999838,
+              "peak_mm": 18.27668747895722,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FR",
+              "start_s": 24.201753999999998,
+              "end_s": 24.300046,
+              "duration_s": 0.09829200000000071,
+              "peak_mm": 13.854008722859994,
+              "censored": false
+            }
+          ]
+        },
+        "FL": {
+          "count_complete": 7,
+          "count_censored": 1,
+          "duration_median_s": 0.22000599999999793,
+          "peak_median_mm": 13.459814227102907,
+          "height_p95_mm": 14.081431385938261,
+          "events": [
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 22.407785999999998,
+              "end_s": 22.519783,
+              "duration_s": 0.11199700000000234,
+              "peak_mm": 13.459814227102907,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 22.743785,
+              "end_s": 23.033784,
+              "duration_s": 0.28999900000000167,
+              "peak_mm": 20.246750091316017,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 23.253784,
+              "end_s": 23.543781,
+              "duration_s": 0.2899969999999996,
+              "peak_mm": 13.374675002486015,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 23.857757,
+              "end_s": 24.077762999999997,
+              "duration_s": 0.22000599999999793,
+              "peak_mm": 14.682104169119858,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 24.413753999999997,
+              "end_s": 24.609755999999997,
+              "duration_s": 0.196002,
+              "peak_mm": 12.021528541539706,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 24.88404,
+              "end_s": 25.149763,
+              "duration_s": 0.26572300000000126,
+              "peak_mm": 13.689320596076609,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 25.468056999999998,
+              "end_s": 25.672055,
+              "duration_s": 0.20399800000000212,
+              "peak_mm": 10.531872184579349,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "FL",
+              "start_s": 25.973793999999998,
+              "end_s": 26.097752999999997,
+              "duration_s": 0.12395899999999926,
+              "peak_mm": 12.848256599437391,
+              "censored": true
+            }
+          ]
+        },
+        "RR": {
+          "count_complete": 7,
+          "count_censored": 1,
+          "duration_median_s": 0.18798699999999968,
+          "peak_median_mm": 19.146288358854402,
+          "height_p95_mm": 18.826614351958902,
+          "events": [
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 22.395785,
+              "end_s": 22.541760999999997,
+              "duration_s": 0.14597599999999744,
+              "peak_mm": 26.04185256623048,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 22.845755,
+              "end_s": 22.995779,
+              "duration_s": 0.15002399999999838,
+              "peak_mm": 14.525701653335249,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 23.399786,
+              "end_s": 23.529761999999998,
+              "duration_s": 0.1299759999999992,
+              "peak_mm": 12.1864188336388,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 23.877769999999998,
+              "end_s": 24.065756999999998,
+              "duration_s": 0.18798699999999968,
+              "peak_mm": 18.46914060122759,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 24.447775999999998,
+              "end_s": 24.645754999999998,
+              "duration_s": 0.19797900000000013,
+              "peak_mm": 19.578311727074528,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 24.951766,
+              "end_s": 25.201763999999997,
+              "duration_s": 0.24999799999999794,
+              "peak_mm": 19.146288358854402,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 25.487776999999998,
+              "end_s": 25.745769,
+              "duration_s": 0.25799200000000155,
+              "peak_mm": 19.653697232850263,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RR",
+              "start_s": 25.996046999999997,
+              "end_s": 26.097752999999997,
+              "duration_s": 0.10170600000000007,
+              "peak_mm": 18.06417980669228,
+              "censored": true
+            }
+          ]
+        },
+        "RL": {
+          "count_complete": 3,
+          "count_censored": 0,
+          "duration_median_s": 0.21598399999999884,
+          "peak_median_mm": 13.319108894960408,
+          "height_p95_mm": 11.888007079922,
+          "events": [
+            {
+              "window": "negative",
+              "leg": "RL",
+              "start_s": 22.565756,
+              "end_s": 22.729782,
+              "duration_s": 0.16402599999999978,
+              "peak_mm": 19.546683777496384,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RL",
+              "start_s": 24.615783,
+              "end_s": 24.831767,
+              "duration_s": 0.21598399999999884,
+              "peak_mm": 12.637572768785493,
+              "censored": false
+            },
+            {
+              "window": "negative",
+              "leg": "RL",
+              "start_s": 25.583781,
+              "end_s": 25.907771,
+              "duration_s": 0.323990000000002,
+              "peak_mm": 13.319108894960408,
+              "censored": false
+            }
+          ]
+        }
+      },
+      "sensitivity": {
+        "5": {
+          "FR": {
+            "count_complete": 5,
+            "count_censored": 0,
+            "duration_median_s": 0.1180109999999992,
+            "peak_median_mm": 13.854008722859994,
+            "height_p95_mm": 15.400419413077184,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 22.569755,
+                "end_s": 22.773761,
+                "duration_s": 0.2040059999999997,
+                "peak_mm": 33.421142718262715,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 23.627838,
+                "end_s": 23.761754999999997,
+                "duration_s": 0.13391699999999673,
+                "peak_mm": 18.27668747895722,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 24.189754,
+                "end_s": 24.307765,
+                "duration_s": 0.1180109999999992,
+                "peak_mm": 13.854008722859994,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 24.741784,
+                "end_s": 24.849778,
+                "duration_s": 0.10799400000000148,
+                "peak_mm": 9.098000768856835,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 25.307775,
+                "end_s": 25.373794999999998,
+                "duration_s": 0.06601999999999819,
+                "peak_mm": 5.717573007420346,
+                "censored": false
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 6,
+            "count_censored": 1,
+            "duration_median_s": 0.39085700000000045,
+            "peak_median_mm": 13.574567411589758,
+            "height_p95_mm": 14.081431385938261,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 22.375785999999998,
+                "end_s": 22.524048,
+                "duration_s": 0.14826200000000256,
+                "peak_mm": 13.459814227102907,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 22.713753999999998,
+                "end_s": 23.613754999999998,
+                "duration_s": 0.9000009999999996,
+                "peak_mm": 20.246750091316017,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 23.761754999999997,
+                "end_s": 24.161770999999998,
+                "duration_s": 0.4000160000000008,
+                "peak_mm": 14.682104169119858,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 24.324085,
+                "end_s": 24.705783,
+                "duration_s": 0.3816980000000001,
+                "peak_mm": 12.021528541539706,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 24.853766,
+                "end_s": 25.261764,
+                "duration_s": 0.4079979999999992,
+                "peak_mm": 13.689320596076609,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 25.393763999999997,
+                "end_s": 25.773754999999998,
+                "duration_s": 0.3799910000000004,
+                "peak_mm": 10.531872184579349,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 25.915774,
+                "end_s": 26.097752999999997,
+                "duration_s": 0.18197899999999834,
+                "peak_mm": 12.848256599437391,
+                "censored": true
+              }
+            ]
+          },
+          "RR": {
+            "count_complete": 7,
+            "count_censored": 1,
+            "duration_median_s": 0.24798799999999943,
+            "peak_median_mm": 19.146288358854402,
+            "height_p95_mm": 18.826614351958902,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 22.377762999999998,
+                "end_s": 22.543789999999998,
+                "duration_s": 0.1660269999999997,
+                "peak_mm": 26.04185256623048,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 22.817757,
+                "end_s": 23.016071999999998,
+                "duration_s": 0.19831499999999735,
+                "peak_mm": 14.525701653335249,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 23.363781,
+                "end_s": 23.549781,
+                "duration_s": 0.18599999999999994,
+                "peak_mm": 12.1864188336388,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 23.848060999999998,
+                "end_s": 24.096048999999997,
+                "duration_s": 0.24798799999999943,
+                "peak_mm": 18.46914060122759,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.408044999999998,
+                "end_s": 24.671796,
+                "duration_s": 0.26375100000000273,
+                "peak_mm": 19.578311727074528,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.920033999999998,
+                "end_s": 25.247771999999998,
+                "duration_s": 0.3277380000000001,
+                "peak_mm": 19.146288358854402,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 25.441768999999997,
+                "end_s": 25.799768999999998,
+                "duration_s": 0.35800000000000054,
+                "peak_mm": 19.653697232850263,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 25.939777,
+                "end_s": 26.097752999999997,
+                "duration_s": 0.1579759999999979,
+                "peak_mm": 18.06417980669228,
+                "censored": true
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 2,
+            "count_censored": 1,
+            "duration_median_s": 0.26799899999999965,
+            "peak_median_mm": 14.47764268804179,
+            "height_p95_mm": 11.888007079922,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 22.461755,
+                "end_s": 22.735781,
+                "duration_s": 0.2740259999999992,
+                "peak_mm": 19.546683777496384,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 23.459782,
+                "end_s": 23.721754,
+                "duration_s": 0.2619720000000001,
+                "peak_mm": 9.408601598587197,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 24.468048,
+                "end_s": 26.097752999999997,
+                "duration_s": 1.6297049999999977,
+                "peak_mm": 13.319108894960408,
+                "censored": true
+              }
+            ]
+          }
+        },
+        "10": {
+          "FR": {
+            "count_complete": 3,
+            "count_censored": 0,
+            "duration_median_s": 0.11999399999999838,
+            "peak_median_mm": 18.27668747895722,
+            "height_p95_mm": 15.400419413077184,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 22.581758,
+                "end_s": 22.767782999999998,
+                "duration_s": 0.18602499999999722,
+                "peak_mm": 33.421142718262715,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 23.635787,
+                "end_s": 23.755781,
+                "duration_s": 0.11999399999999838,
+                "peak_mm": 18.27668747895722,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 24.201753999999998,
+                "end_s": 24.300046,
+                "duration_s": 0.09829200000000071,
+                "peak_mm": 13.854008722859994,
+                "censored": false
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 7,
+            "count_censored": 1,
+            "duration_median_s": 0.22000599999999793,
+            "peak_median_mm": 13.459814227102907,
+            "height_p95_mm": 14.081431385938261,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 22.407785999999998,
+                "end_s": 22.519783,
+                "duration_s": 0.11199700000000234,
+                "peak_mm": 13.459814227102907,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 22.743785,
+                "end_s": 23.033784,
+                "duration_s": 0.28999900000000167,
+                "peak_mm": 20.246750091316017,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 23.253784,
+                "end_s": 23.543781,
+                "duration_s": 0.2899969999999996,
+                "peak_mm": 13.374675002486015,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 23.857757,
+                "end_s": 24.077762999999997,
+                "duration_s": 0.22000599999999793,
+                "peak_mm": 14.682104169119858,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 24.413753999999997,
+                "end_s": 24.609755999999997,
+                "duration_s": 0.196002,
+                "peak_mm": 12.021528541539706,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 24.88404,
+                "end_s": 25.149763,
+                "duration_s": 0.26572300000000126,
+                "peak_mm": 13.689320596076609,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 25.468056999999998,
+                "end_s": 25.672055,
+                "duration_s": 0.20399800000000212,
+                "peak_mm": 10.531872184579349,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 25.973793999999998,
+                "end_s": 26.097752999999997,
+                "duration_s": 0.12395899999999926,
+                "peak_mm": 12.848256599437391,
+                "censored": true
+              }
+            ]
+          },
+          "RR": {
+            "count_complete": 7,
+            "count_censored": 1,
+            "duration_median_s": 0.18798699999999968,
+            "peak_median_mm": 19.146288358854402,
+            "height_p95_mm": 18.826614351958902,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 22.395785,
+                "end_s": 22.541760999999997,
+                "duration_s": 0.14597599999999744,
+                "peak_mm": 26.04185256623048,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 22.845755,
+                "end_s": 22.995779,
+                "duration_s": 0.15002399999999838,
+                "peak_mm": 14.525701653335249,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 23.399786,
+                "end_s": 23.529761999999998,
+                "duration_s": 0.1299759999999992,
+                "peak_mm": 12.1864188336388,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 23.877769999999998,
+                "end_s": 24.065756999999998,
+                "duration_s": 0.18798699999999968,
+                "peak_mm": 18.46914060122759,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.447775999999998,
+                "end_s": 24.645754999999998,
+                "duration_s": 0.19797900000000013,
+                "peak_mm": 19.578311727074528,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.951766,
+                "end_s": 25.201763999999997,
+                "duration_s": 0.24999799999999794,
+                "peak_mm": 19.146288358854402,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 25.487776999999998,
+                "end_s": 25.745769,
+                "duration_s": 0.25799200000000155,
+                "peak_mm": 19.653697232850263,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 25.996046999999997,
+                "end_s": 26.097752999999997,
+                "duration_s": 0.10170600000000007,
+                "peak_mm": 18.06417980669228,
+                "censored": true
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 3,
+            "count_censored": 0,
+            "duration_median_s": 0.21598399999999884,
+            "peak_median_mm": 13.319108894960408,
+            "height_p95_mm": 11.888007079922,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 22.565756,
+                "end_s": 22.729782,
+                "duration_s": 0.16402599999999978,
+                "peak_mm": 19.546683777496384,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 24.615783,
+                "end_s": 24.831767,
+                "duration_s": 0.21598399999999884,
+                "peak_mm": 12.637572768785493,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 25.583781,
+                "end_s": 25.907771,
+                "duration_s": 0.323990000000002,
+                "peak_mm": 13.319108894960408,
+                "censored": false
+              }
+            ]
+          }
+        },
+        "15": {
+          "FR": {
+            "count_complete": 2,
+            "count_censored": 0,
+            "duration_median_s": 0.14014400000000116,
+            "peak_median_mm": 25.848915098609968,
+            "height_p95_mm": 15.400419413077184,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 22.589755999999998,
+                "end_s": 22.765770999999997,
+                "duration_s": 0.1760149999999996,
+                "peak_mm": 33.421142718262715,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "FR",
+                "start_s": 23.647783999999998,
+                "end_s": 23.752057,
+                "duration_s": 0.10427300000000272,
+                "peak_mm": 18.27668747895722,
+                "censored": false
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 1,
+            "count_censored": 0,
+            "duration_median_s": 0.23007699999999787,
+            "peak_median_mm": 20.246750091316017,
+            "height_p95_mm": 14.081431385938261,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "FL",
+                "start_s": 22.797757,
+                "end_s": 23.027834,
+                "duration_s": 0.23007699999999787,
+                "peak_mm": 20.246750091316017,
+                "censored": false
+              }
+            ]
+          },
+          "RR": {
+            "count_complete": 5,
+            "count_censored": 1,
+            "duration_median_s": 0.17030600000000007,
+            "peak_median_mm": 19.578311727074528,
+            "height_p95_mm": 18.826614351958902,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 22.413755,
+                "end_s": 22.53978,
+                "duration_s": 0.12602500000000205,
+                "peak_mm": 26.04185256623048,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 23.889758,
+                "end_s": 24.060064,
+                "duration_s": 0.17030600000000007,
+                "peak_mm": 18.46914060122759,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.465754,
+                "end_s": 24.629759,
+                "duration_s": 0.1640049999999995,
+                "peak_mm": 19.578311727074528,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 24.97177,
+                "end_s": 25.144060999999997,
+                "duration_s": 0.17229099999999775,
+                "peak_mm": 19.146288358854402,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 25.521767999999998,
+                "end_s": 25.71577,
+                "duration_s": 0.19400200000000112,
+                "peak_mm": 19.653697232850263,
+                "censored": false
+              },
+              {
+                "window": "negative",
+                "leg": "RR",
+                "start_s": 26.027832999999998,
+                "end_s": 26.097752999999997,
+                "duration_s": 0.06991999999999976,
+                "peak_mm": 18.06417980669228,
+                "censored": true
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 1,
+            "count_censored": 0,
+            "duration_median_s": 0.14997600000000233,
+            "peak_median_mm": 19.546683777496384,
+            "height_p95_mm": 11.888007079922,
+            "events": [
+              {
+                "window": "negative",
+                "leg": "RL",
+                "start_s": 22.575779999999998,
+                "end_s": 22.725756,
+                "duration_s": 0.14997600000000233,
+                "peak_mm": 19.546683777496384,
+                "censored": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "positive",
+      "start_s": 27.2,
+      "end_s": 31.4,
+      "feet": {
+        "FR": {
+          "count_complete": 5,
+          "count_censored": 0,
+          "duration_median_s": 0.24197300000000155,
+          "peak_median_mm": 17.3903651840219,
+          "height_p95_mm": 17.250809044236867,
+          "events": [
+            {
+              "window": "positive",
+              "leg": "FR",
+              "start_s": 27.33177,
+              "end_s": 27.524030999999997,
+              "duration_s": 0.19226099999999846,
+              "peak_mm": 21.195020928224785,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "FR",
+              "start_s": 28.491781,
+              "end_s": 28.667776,
+              "duration_s": 0.17599500000000035,
+              "peak_mm": 14.903807465896286,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "FR",
+              "start_s": 29.395781999999997,
+              "end_s": 29.637755,
+              "duration_s": 0.24197300000000155,
+              "peak_mm": 24.782264754946603,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "FR",
+              "start_s": 30.007768,
+              "end_s": 30.31569,
+              "duration_s": 0.30792200000000136,
+              "peak_mm": 10.973920165089885,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "FR",
+              "start_s": 30.449754,
+              "end_s": 30.983773,
+              "duration_s": 0.5340190000000007,
+              "peak_mm": 17.3903651840219,
+              "censored": false
+            }
+          ]
+        },
+        "FL": {
+          "count_complete": 0,
+          "count_censored": 0,
+          "duration_median_s": null,
+          "peak_median_mm": null,
+          "height_p95_mm": 2.468618493962298,
+          "events": []
+        },
+        "RR": {
+          "count_complete": 3,
+          "count_censored": 1,
+          "duration_median_s": 0.2420039999999979,
+          "peak_median_mm": 27.557635263842805,
+          "height_p95_mm": 20.86253798089556,
+          "events": [
+            {
+              "window": "positive",
+              "leg": "RR",
+              "start_s": 27.201756999999997,
+              "end_s": 27.305754,
+              "duration_s": 0.10399700000000323,
+              "peak_mm": 17.413186918714462,
+              "censored": true
+            },
+            {
+              "window": "positive",
+              "leg": "RR",
+              "start_s": 28.251792,
+              "end_s": 28.497777,
+              "duration_s": 0.245985000000001,
+              "peak_mm": 27.557635263842805,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RR",
+              "start_s": 29.197763,
+              "end_s": 29.419770999999997,
+              "duration_s": 0.22200799999999887,
+              "peak_mm": 29.02413971147727,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RR",
+              "start_s": 30.241767,
+              "end_s": 30.483770999999997,
+              "duration_s": 0.2420039999999979,
+              "peak_mm": 23.760868049288703,
+              "censored": false
+            }
+          ]
+        },
+        "RL": {
+          "count_complete": 6,
+          "count_censored": 0,
+          "duration_median_s": 0.17715450000000033,
+          "peak_median_mm": 15.080701939255327,
+          "height_p95_mm": 15.877373408558313,
+          "events": [
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 27.339976999999998,
+              "end_s": 27.596034,
+              "duration_s": 0.256057000000002,
+              "peak_mm": 16.355703119164566,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 28.119771999999998,
+              "end_s": 28.295783999999998,
+              "duration_s": 0.17601200000000006,
+              "peak_mm": 18.892563992495226,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 28.509774999999998,
+              "end_s": 28.689771999999998,
+              "duration_s": 0.17999700000000018,
+              "peak_mm": 13.481164624022462,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 29.465767,
+              "end_s": 29.644064,
+              "duration_s": 0.1782970000000006,
+              "peak_mm": 22.524345275798442,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 30.14377,
+              "end_s": 30.235778,
+              "duration_s": 0.09200799999999987,
+              "peak_mm": 10.701712971793647,
+              "censored": false
+            },
+            {
+              "window": "positive",
+              "leg": "RL",
+              "start_s": 30.555767999999997,
+              "end_s": 30.684068,
+              "duration_s": 0.12830000000000297,
+              "peak_mm": 13.80570075934609,
+              "censored": false
+            }
+          ]
+        }
+      },
+      "sensitivity": {
+        "5": {
+          "FR": {
+            "count_complete": 3,
+            "count_censored": 1,
+            "duration_median_s": 0.243977000000001,
+            "peak_median_mm": 14.903807465896286,
+            "height_p95_mm": 17.250809044236867,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 27.313776999999998,
+                "end_s": 27.557754,
+                "duration_s": 0.243977000000001,
+                "peak_mm": 21.195020928224785,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 28.107768999999998,
+                "end_s": 28.282116,
+                "duration_s": 0.17434700000000092,
+                "peak_mm": 9.542938947716294,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 28.449768,
+                "end_s": 29.291769,
+                "duration_s": 0.8420009999999998,
+                "peak_mm": 14.903807465896286,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 29.347769,
+                "end_s": 31.397755,
+                "duration_s": 2.0499860000000005,
+                "peak_mm": 24.782264754946603,
+                "censored": true
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 2,
+            "count_censored": 0,
+            "duration_median_s": 0.07498900000000042,
+            "peak_median_mm": 6.665670656919351,
+            "height_p95_mm": 2.468618493962298,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "FL",
+                "start_s": 28.355781,
+                "end_s": 28.433756,
+                "duration_s": 0.07797499999999857,
+                "peak_mm": 6.0220789318809755,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FL",
+                "start_s": 29.303767999999998,
+                "end_s": 29.375771,
+                "duration_s": 0.07200300000000226,
+                "peak_mm": 7.309262381957726,
+                "censored": false
+              }
+            ]
+          },
+          "RR": {
+            "count_complete": 3,
+            "count_censored": 2,
+            "duration_median_s": 0.9142539999999997,
+            "peak_median_mm": 27.557635263842805,
+            "height_p95_mm": 20.86253798089556,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 27.201756999999997,
+                "end_s": 27.309763999999998,
+                "duration_s": 0.10800700000000063,
+                "peak_mm": 17.413186918714462,
+                "censored": true
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 27.389754,
+                "end_s": 28.499772,
+                "duration_s": 1.1100180000000002,
+                "peak_mm": 27.557635263842805,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 28.557778,
+                "end_s": 29.421763,
+                "duration_s": 0.8639849999999996,
+                "peak_mm": 29.02413971147727,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 29.575789,
+                "end_s": 30.490043,
+                "duration_s": 0.9142539999999997,
+                "peak_mm": 23.760868049288703,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 30.581757,
+                "end_s": 31.397755,
+                "duration_s": 0.8159980000000004,
+                "peak_mm": 8.141129442176764,
+                "censored": true
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 7,
+            "count_censored": 1,
+            "duration_median_s": 0.25001100000000065,
+            "peak_median_mm": 13.80570075934609,
+            "height_p95_mm": 15.877373408558313,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 27.319772999999998,
+                "end_s": 27.996043999999998,
+                "duration_s": 0.6762709999999998,
+                "peak_mm": 16.355703119164566,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 28.073759,
+                "end_s": 28.32377,
+                "duration_s": 0.25001100000000065,
+                "peak_mm": 18.892563992495226,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 28.489752,
+                "end_s": 28.804038,
+                "duration_s": 0.3142859999999992,
+                "peak_mm": 13.481164624022462,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 29.029778999999998,
+                "end_s": 29.237766999999998,
+                "duration_s": 0.20798800000000028,
+                "peak_mm": 7.581151401772956,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 29.441765,
+                "end_s": 29.685757,
+                "duration_s": 0.24399199999999865,
+                "peak_mm": 22.524345275798442,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 30.085753999999998,
+                "end_s": 30.273761999999998,
+                "duration_s": 0.18800799999999995,
+                "peak_mm": 10.701712971793647,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 30.523771,
+                "end_s": 30.812064,
+                "duration_s": 0.28829299999999947,
+                "peak_mm": 13.80570075934609,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 31.225759,
+                "end_s": 31.397755,
+                "duration_s": 0.17199600000000004,
+                "peak_mm": 8.93687283875691,
+                "censored": true
+              }
+            ]
+          }
+        },
+        "10": {
+          "FR": {
+            "count_complete": 5,
+            "count_censored": 0,
+            "duration_median_s": 0.24197300000000155,
+            "peak_median_mm": 17.3903651840219,
+            "height_p95_mm": 17.250809044236867,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 27.33177,
+                "end_s": 27.524030999999997,
+                "duration_s": 0.19226099999999846,
+                "peak_mm": 21.195020928224785,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 28.491781,
+                "end_s": 28.667776,
+                "duration_s": 0.17599500000000035,
+                "peak_mm": 14.903807465896286,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 29.395781999999997,
+                "end_s": 29.637755,
+                "duration_s": 0.24197300000000155,
+                "peak_mm": 24.782264754946603,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 30.007768,
+                "end_s": 30.31569,
+                "duration_s": 0.30792200000000136,
+                "peak_mm": 10.973920165089885,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 30.449754,
+                "end_s": 30.983773,
+                "duration_s": 0.5340190000000007,
+                "peak_mm": 17.3903651840219,
+                "censored": false
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 0,
+            "count_censored": 0,
+            "duration_median_s": null,
+            "peak_median_mm": null,
+            "height_p95_mm": 2.468618493962298,
+            "events": []
+          },
+          "RR": {
+            "count_complete": 3,
+            "count_censored": 1,
+            "duration_median_s": 0.2420039999999979,
+            "peak_median_mm": 27.557635263842805,
+            "height_p95_mm": 20.86253798089556,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 27.201756999999997,
+                "end_s": 27.305754,
+                "duration_s": 0.10399700000000323,
+                "peak_mm": 17.413186918714462,
+                "censored": true
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 28.251792,
+                "end_s": 28.497777,
+                "duration_s": 0.245985000000001,
+                "peak_mm": 27.557635263842805,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 29.197763,
+                "end_s": 29.419770999999997,
+                "duration_s": 0.22200799999999887,
+                "peak_mm": 29.02413971147727,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 30.241767,
+                "end_s": 30.483770999999997,
+                "duration_s": 0.2420039999999979,
+                "peak_mm": 23.760868049288703,
+                "censored": false
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 6,
+            "count_censored": 0,
+            "duration_median_s": 0.17715450000000033,
+            "peak_median_mm": 15.080701939255327,
+            "height_p95_mm": 15.877373408558313,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 27.339976999999998,
+                "end_s": 27.596034,
+                "duration_s": 0.256057000000002,
+                "peak_mm": 16.355703119164566,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 28.119771999999998,
+                "end_s": 28.295783999999998,
+                "duration_s": 0.17601200000000006,
+                "peak_mm": 18.892563992495226,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 28.509774999999998,
+                "end_s": 28.689771999999998,
+                "duration_s": 0.17999700000000018,
+                "peak_mm": 13.481164624022462,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 29.465767,
+                "end_s": 29.644064,
+                "duration_s": 0.1782970000000006,
+                "peak_mm": 22.524345275798442,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 30.14377,
+                "end_s": 30.235778,
+                "duration_s": 0.09200799999999987,
+                "peak_mm": 10.701712971793647,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 30.555767999999997,
+                "end_s": 30.684068,
+                "duration_s": 0.12830000000000297,
+                "peak_mm": 13.80570075934609,
+                "censored": false
+              }
+            ]
+          }
+        },
+        "15": {
+          "FR": {
+            "count_complete": 3,
+            "count_censored": 0,
+            "duration_median_s": 0.1980070000000005,
+            "peak_median_mm": 21.195020928224785,
+            "height_p95_mm": 17.250809044236867,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 27.358390999999997,
+                "end_s": 27.515766,
+                "duration_s": 0.15737500000000182,
+                "peak_mm": 21.195020928224785,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 29.428048,
+                "end_s": 29.627768999999997,
+                "duration_s": 0.1997209999999967,
+                "peak_mm": 24.782264754946603,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "FR",
+                "start_s": 30.486061,
+                "end_s": 30.684068,
+                "duration_s": 0.1980070000000005,
+                "peak_mm": 17.3903651840219,
+                "censored": false
+              }
+            ]
+          },
+          "FL": {
+            "count_complete": 0,
+            "count_censored": 0,
+            "duration_median_s": null,
+            "peak_median_mm": null,
+            "height_p95_mm": 2.468618493962298,
+            "events": []
+          },
+          "RR": {
+            "count_complete": 3,
+            "count_censored": 1,
+            "duration_median_s": 0.20398999999999745,
+            "peak_median_mm": 27.557635263842805,
+            "height_p95_mm": 20.86253798089556,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 27.201756999999997,
+                "end_s": 27.303758,
+                "duration_s": 0.10200100000000134,
+                "peak_mm": 17.413186918714462,
+                "censored": true
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 28.289755999999997,
+                "end_s": 28.496036,
+                "duration_s": 0.20628000000000313,
+                "peak_mm": 27.557635263842805,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 29.229754999999997,
+                "end_s": 29.417769,
+                "duration_s": 0.18801400000000257,
+                "peak_mm": 29.02413971147727,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RR",
+                "start_s": 30.275779,
+                "end_s": 30.479768999999997,
+                "duration_s": 0.20398999999999745,
+                "peak_mm": 23.760868049288703,
+                "censored": false
+              }
+            ]
+          },
+          "RL": {
+            "count_complete": 3,
+            "count_censored": 0,
+            "duration_median_s": 0.13968500000000006,
+            "peak_median_mm": 18.892563992495226,
+            "height_p95_mm": 15.877373408558313,
+            "events": [
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 27.370068999999997,
+                "end_s": 27.509753999999997,
+                "duration_s": 0.13968500000000006,
+                "peak_mm": 16.355703119164566,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 28.159769999999998,
+                "end_s": 28.277762,
+                "duration_s": 0.11799200000000098,
+                "peak_mm": 18.892563992495226,
+                "censored": false
+              },
+              {
+                "window": "positive",
+                "leg": "RL",
+                "start_s": 29.476034,
+                "end_s": 29.637755,
+                "duration_s": 0.161721,
+                "peak_mm": 22.524345275798442,
+                "censored": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "peak_timing": {
+    "negative": {
+      "legs": [
+        "FL",
+        "RR"
+      ],
+      "peak_times_s": {
+        "FR": [
+          22.685758999999997,
+          23.701759,
+          24.253764999999998
+        ],
+        "FL": [
+          22.464071999999998,
+          22.923783999999998,
+          23.459782,
+          23.956031,
+          24.516047999999998,
+          25.025944,
+          25.577779
+        ],
+        "RR": [
+          22.488073,
+          22.933785,
+          23.47178,
+          23.968042,
+          24.545759,
+          25.060043,
+          25.609771
+        ],
+        "RL": [
+          22.663781,
+          24.78805,
+          25.861765
+        ]
+      },
+      "nearest_peak_median_s": 0.024001000000001937,
+      "matched_within_80ms": 7,
+      "reference_peak_count": 7,
+      "cycle_median_s": {
+        "FR": 0.7840030000000002,
+        "FL": 0.522947000000002,
+        "RR": 0.5261394999999993,
+        "RL": 1.598991999999999
+      }
+    },
+    "positive": {
+      "legs": [
+        "FR",
+        "RL"
+      ],
+      "peak_times_s": {
+        "FR": [
+          27.433754,
+          28.580046,
+          29.533752999999997,
+          30.187780999999998,
+          30.593759
+        ],
+        "FL": [],
+        "RR": [
+          28.443766,
+          29.368029,
+          30.431787999999997
+        ],
+        "RL": [
+          27.445757,
+          28.221762,
+          28.611774999999998,
+          29.545755,
+          30.193762,
+          30.619767999999997
+        ]
+      },
+      "nearest_peak_median_s": 0.012002999999999986,
+      "matched_within_80ms": 5,
+      "reference_peak_count": 5,
+      "cycle_median_s": {
+        "FR": 0.8038674999999991,
+        "FL": null,
+        "RR": 0.9940109999999986,
+        "RL": 0.6480069999999998
+      }
+    }
+  }
+}

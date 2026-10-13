@@ -1,0 +1,278 @@
+{
+  "log": "/home/xjtx/rl/HIMLoco/legged_gym/real-robot-lcm/record.lcm.00",
+  "time_origin_lcm_us": 1791637761981830,
+  "imu_samples": 62118,
+  "duration_s": 62.117058,
+  "method": {
+    "field": "microstrain.omega[2]",
+    "grid_dt_s": 0.005,
+    "median_window_s": 0.155,
+    "low_rad_s": 0.06,
+    "high_rad_s": 0.12,
+    "bridge_gap_s": 0.15,
+    "min_duration_s": 0.35,
+    "min_continuous_high_s": 0.15
+  },
+  "segments": [
+    {
+      "start_s": 20.37,
+      "end_s": 21.49,
+      "duration_s": 1.1199999999999974,
+      "direction": "positive",
+      "mean_yaw_rate_rad_s": 0.5121070956726931,
+      "peak_abs_yaw_rate_rad_s": 0.8990882017087347,
+      "integrated_body_z_deg": 32.86256426963729
+    },
+    {
+      "start_s": 21.935,
+      "end_s": 26.47,
+      "duration_s": 4.535,
+      "direction": "negative",
+      "mean_yaw_rate_rad_s": -0.3578324650505095,
+      "peak_abs_yaw_rate_rad_s": 0.5886729955673218,
+      "integrated_body_z_deg": -92.97788524141077
+    },
+    {
+      "start_s": 26.795,
+      "end_s": 31.85,
+      "duration_s": 5.055,
+      "direction": "positive",
+      "mean_yaw_rate_rad_s": 0.3394655635525832,
+      "peak_abs_yaw_rate_rad_s": 0.5730947256088257,
+      "integrated_body_z_deg": 98.31946733245285
+    },
+    {
+      "start_s": 32.15,
+      "end_s": 34.120000000000005,
+      "duration_s": 1.970000000000006,
+      "direction": "negative",
+      "mean_yaw_rate_rad_s": -0.6017846487566062,
+      "peak_abs_yaw_rate_rad_s": 0.8176705243018767,
+      "integrated_body_z_deg": -67.92504948254691
+    },
+    {
+      "start_s": 34.35,
+      "end_s": 36.535000000000004,
+      "duration_s": 2.1850000000000023,
+      "direction": "positive",
+      "mean_yaw_rate_rad_s": 0.47405839520750187,
+      "peak_abs_yaw_rate_rad_s": 0.6564039587974548,
+      "integrated_body_z_deg": 59.34797645457425
+    },
+    {
+      "start_s": 52.550000000000004,
+      "end_s": 53.765,
+      "duration_s": 1.2149999999999963,
+      "direction": "positive",
+      "mean_yaw_rate_rad_s": 0.4491808848161933,
+      "peak_abs_yaw_rate_rad_s": 0.6663435101509094,
+      "integrated_body_z_deg": 31.2694452595726
+    },
+    {
+      "start_s": 55.375,
+      "end_s": 56.25000000000001,
+      "duration_s": 0.8750000000000071,
+      "direction": "negative",
+      "mean_yaw_rate_rad_s": -0.7329072732584817,
+      "peak_abs_yaw_rate_rad_s": 0.9200170636177063,
+      "integrated_body_z_deg": -36.7434318406333
+    }
+  ],
+  "sensitivity": {
+    "loose": [
+      {
+        "start_s": 20.365000000000002,
+        "end_s": 21.49,
+        "duration_s": 1.1249999999999964,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.510010425473131,
+        "peak_abs_yaw_rate_rad_s": 0.8990882017087347,
+        "integrated_body_z_deg": 32.87412549819204
+      },
+      {
+        "start_s": 21.93,
+        "end_s": 26.474999999999998,
+        "duration_s": 4.544999999999998,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.3571595591843795,
+        "peak_abs_yaw_rate_rad_s": 0.5886729955673218,
+        "integrated_body_z_deg": -93.0076771840113
+      },
+      {
+        "start_s": 26.785,
+        "end_s": 32.13,
+        "duration_s": 5.345000000000002,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.3222382002505359,
+        "peak_abs_yaw_rate_rad_s": 0.5730947256088257,
+        "integrated_body_z_deg": 98.68414102216114
+      },
+      {
+        "start_s": 32.145,
+        "end_s": 34.125,
+        "duration_s": 1.9799999999999969,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.598984021208946,
+        "peak_abs_yaw_rate_rad_s": 0.8176705243018767,
+        "integrated_body_z_deg": -67.95212769387346
+      },
+      {
+        "start_s": 34.33,
+        "end_s": 36.540000000000006,
+        "duration_s": 2.210000000000008,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.46922226515934284,
+        "peak_abs_yaw_rate_rad_s": 0.6564039587974548,
+        "integrated_body_z_deg": 59.414646538309256
+      },
+      {
+        "start_s": 52.545,
+        "end_s": 53.775000000000006,
+        "duration_s": 1.230000000000004,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.44436059319048,
+        "peak_abs_yaw_rate_rad_s": 0.6663435101509094,
+        "integrated_body_z_deg": 31.315783483245383
+      },
+      {
+        "start_s": 55.375,
+        "end_s": 56.25000000000001,
+        "duration_s": 0.8750000000000071,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.7329072732584817,
+        "peak_abs_yaw_rate_rad_s": 0.9200170636177063,
+        "integrated_body_z_deg": -36.7434318406333
+      }
+    ],
+    "default": [
+      {
+        "start_s": 20.37,
+        "end_s": 21.49,
+        "duration_s": 1.1199999999999974,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.5121070956726931,
+        "peak_abs_yaw_rate_rad_s": 0.8990882017087347,
+        "integrated_body_z_deg": 32.86256426963729
+      },
+      {
+        "start_s": 21.935,
+        "end_s": 26.47,
+        "duration_s": 4.535,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.3578324650505095,
+        "peak_abs_yaw_rate_rad_s": 0.5886729955673218,
+        "integrated_body_z_deg": -92.97788524141077
+      },
+      {
+        "start_s": 26.795,
+        "end_s": 31.85,
+        "duration_s": 5.055,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.3394655635525832,
+        "peak_abs_yaw_rate_rad_s": 0.5730947256088257,
+        "integrated_body_z_deg": 98.31946733245285
+      },
+      {
+        "start_s": 32.15,
+        "end_s": 34.120000000000005,
+        "duration_s": 1.970000000000006,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.6017846487566062,
+        "peak_abs_yaw_rate_rad_s": 0.8176705243018767,
+        "integrated_body_z_deg": -67.92504948254691
+      },
+      {
+        "start_s": 34.35,
+        "end_s": 36.535000000000004,
+        "duration_s": 2.1850000000000023,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.47405839520750187,
+        "peak_abs_yaw_rate_rad_s": 0.6564039587974548,
+        "integrated_body_z_deg": 59.34797645457425
+      },
+      {
+        "start_s": 52.550000000000004,
+        "end_s": 53.765,
+        "duration_s": 1.2149999999999963,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.4491808848161933,
+        "peak_abs_yaw_rate_rad_s": 0.6663435101509094,
+        "integrated_body_z_deg": 31.2694452595726
+      },
+      {
+        "start_s": 55.375,
+        "end_s": 56.25000000000001,
+        "duration_s": 0.8750000000000071,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.7329072732584817,
+        "peak_abs_yaw_rate_rad_s": 0.9200170636177063,
+        "integrated_body_z_deg": -36.7434318406333
+      }
+    ],
+    "strict": [
+      {
+        "start_s": 20.375,
+        "end_s": 21.485,
+        "duration_s": 1.1099999999999994,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.516118710164092,
+        "peak_abs_yaw_rate_rad_s": 0.8990882017087347,
+        "integrated_body_z_deg": 32.824280440353476
+      },
+      {
+        "start_s": 21.95,
+        "end_s": 26.47,
+        "duration_s": 4.52,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.35878688952162713,
+        "peak_abs_yaw_rate_rad_s": 0.5886729955673218,
+        "integrated_body_z_deg": -92.91752480425531
+      },
+      {
+        "start_s": 26.805,
+        "end_s": 31.85,
+        "duration_s": 5.045000000000002,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.33999439861071085,
+        "peak_abs_yaw_rate_rad_s": 0.5730947256088257,
+        "integrated_body_z_deg": 98.27783147684326
+      },
+      {
+        "start_s": 32.15,
+        "end_s": 34.115,
+        "duration_s": 1.9650000000000034,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.6031182372074764,
+        "peak_abs_yaw_rate_rad_s": 0.8176705243018767,
+        "integrated_body_z_deg": -67.90279454483935
+      },
+      {
+        "start_s": 34.39,
+        "end_s": 36.53,
+        "duration_s": 2.1400000000000006,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.48245330184770596,
+        "peak_abs_yaw_rate_rad_s": 0.6564039587974548,
+        "integrated_body_z_deg": 59.155031337172886
+      },
+      {
+        "start_s": 52.56,
+        "end_s": 53.755,
+        "duration_s": 1.1950000000000003,
+        "direction": "positive",
+        "mean_yaw_rate_rad_s": 0.45548489525014674,
+        "peak_abs_yaw_rate_rad_s": 0.6663435101509094,
+        "integrated_body_z_deg": 31.186347745101205
+      },
+      {
+        "start_s": 55.38,
+        "end_s": 56.245000000000005,
+        "duration_s": 0.865000000000002,
+        "direction": "negative",
+        "mean_yaw_rate_rad_s": -0.7405404985984626,
+        "peak_abs_yaw_rate_rad_s": 0.9200170636177063,
+        "integrated_body_z_deg": -36.701816035897814
+      }
+    ]
+  }
+}

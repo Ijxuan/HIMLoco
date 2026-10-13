@@ -215,6 +215,28 @@ def export_policy_as_jit(actor_critic, path, filename=None):
         traced_script_module = torch.jit.script(model)
         traced_script_module.save(output_path)
 
+
+def export_policy_as_onnx(actor_critic, path, filename='policy.onnx'):
+    """Export the complete Mini Cheetah HIM inference policy on CPU."""
+    import onnx
+
+    if (not hasattr(actor_critic, 'estimator')
+            or actor_critic.num_actor_obs != 270
+            or actor_critic.num_one_step_obs != 45
+            or actor_critic.num_actions != 12):
+        raise ValueError('Mini Cheetah ONNX export requires a 270 -> 12 HIM policy with 45-D frames')
+    model = PolicyExporterHIM(actor_critic).cpu().eval()
+    os.makedirs(path, exist_ok=True)
+    output_path = os.path.join(path, filename)
+    with torch.no_grad():
+        torch.onnx.export(
+            model, torch.zeros(1, 270), output_path,
+            export_params=True, opset_version=11, do_constant_folding=True,
+            input_names=['obs'], output_names=['actions'],
+        )
+    onnx.checker.check_model(output_path, full_check=True)
+
+
 # class PolicyExporterLSTM(torch.nn.Module):
 #     def __init__(self, actor_critic):
 #         super().__init__()

@@ -36,11 +36,11 @@ from datetime import datetime
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import export_policy_as_jit, get_args, task_registry
+from legged_gym.utils import export_policy_as_jit, export_policy_as_onnx, get_args, task_registry
 import torch
 
 
-JIT_EXPORT_INTERVAL = 1000
+POLICY_EXPORT_INTERVAL = 1000
 
 
 def print_training_code_status(env, ppo_runner, stage):
@@ -80,14 +80,25 @@ def print_training_code_status(env, ppo_runner, stage):
     print('=' * 72 + '\n', flush=True)
 
 
-def export_policy(ppo_runner, filename):
+def export_policy(ppo_runner, filename, task):
     export_dir = os.path.join(ppo_runner.log_dir, 'exported', 'policies')
-    export_policy_as_jit(ppo_runner.alg.actor_critic, export_dir, filename=filename)
+    exporter = export_policy_as_onnx if task == 'minich' else export_policy_as_jit
+    exporter(ppo_runner.alg.actor_critic, export_dir, filename=filename)
     export_path = os.path.join(export_dir, filename)
-    print(f'Exported TorchScript policy: {export_path}')
+    policy_format = 'ONNX' if task == 'minich' else 'TorchScript'
+    print(f'Exported {policy_format} policy: {export_path}')
 
 
 def train(args, headless=True):
+    if args.task == 'minich':
+        try:
+            import onnx
+        except ImportError as exc:
+            raise RuntimeError(
+                'Mini Cheetah training requires ONNX export dependencies. '
+                'Activate gym4 and run: python -m pip install onnx==1.17.0'
+            ) from exc
+    export_extension = 'onnx' if args.task == 'minich' else 'jit'
     args.headless = headless
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
@@ -97,7 +108,7 @@ def train(args, headless=True):
     try:
         print_training_code_status(env, ppo_runner, '第一轮采样之前')
         while remaining_iterations > 0:
-            iterations = min(JIT_EXPORT_INTERVAL, remaining_iterations)
+            iterations = min(POLICY_EXPORT_INTERVAL, remaining_iterations)
             ppo_runner.learn(
                 num_learning_iterations=iterations,
                 init_at_random_ep_len=init_at_random_ep_len,
@@ -106,12 +117,13 @@ def train(args, headless=True):
                 print_training_code_status(env, ppo_runner, '已完成第 1000 轮训练')
             export_policy(
                 ppo_runner,
-                f'model_{ppo_runner.current_learning_iteration}.jit',
+                f'model_{ppo_runner.current_learning_iteration}.{export_extension}',
+                args.task,
             )
             remaining_iterations -= iterations
             init_at_random_ep_len = False
     finally:
-        export_policy(ppo_runner, 'latest.jit')
+        export_policy(ppo_runner, f'latest.{export_extension}', args.task)
 
 if __name__ == '__main__':
     args = get_args()

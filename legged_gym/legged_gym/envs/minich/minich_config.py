@@ -82,7 +82,14 @@ class MiniChRoughCfg(LeggedRobotCfg):
             raibert_heuristic = -10.0
 
         base_height_target = 0.26
-        # Touchdown reward: +1 at target, 0 at bounds, negative outside.
+        # Turn lifts: >=1 cm sole clearance, >=0.5 Hz per foot in a 4 s window.
+        turn_lift_min_clearance = 0.01
+        turn_lift_min_frequency = 0.5
+        turn_lift_window_s = 4.0
+        turn_lift_foot_radius = 0.02
+        turn_lift_frequency_cost = 1.0
+        # Retain continuous overdue-flight cost beyond 0.30 s.
+        # Target/min remain the fallback formula for tasks without turn_lift settings.
         feet_air_time_target = 0.25
         feet_air_time_min = 0.20
         feet_air_time_max = 0.30

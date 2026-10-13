@@ -54,6 +54,29 @@ We test our codes under the following environment:
   - `cd legged_gym/legged_gym/scripts`
   - `python train.py`
 
+   Mini Cheetah training (`python train.py --task=minich`) automatically exports
+   ONNX every 1000 iterations and after the final partial block to
+   `legged_gym/logs/<experiment>/<run>/exported/policies/model_<iteration>.onnx`.
+   On normal completion or interruption it also exports `latest.onnx` from the
+   current in-memory weights. Training checkpoints remain `model_<iteration>.pt`.
+   Other tasks keep their existing TorchScript training exports.
+
+   Install the export dependency in the training environment before starting:
+
+   ```bash
+   conda activate gym4
+   python -m pip install onnx==1.17.0
+   ```
+
+   This export uses PyTorch's ONNX exporter (opset 11) and runs the ONNX checker.
+   The complete HIM estimator and Actor accept float32 `obs` of shape `[1,270]`
+   and return raw `actions` of shape `[1,12]`. The caller maintains six 45-D
+   observation frames, newest first, and applies observation preprocessing,
+   action clipping and `q_target = q_default + 0.25 * actions`.
+   For Python inference or numerical validation, optionally install
+   `python -m pip install onnxruntime==1.19.2 flatbuffers==24.3.25`.
+   ONNX Runtime is not required for training export.
+
 2. Play and export the latest policy:
   - `cd legged_gym/legged_gym/scripts`
   - `python play.py`

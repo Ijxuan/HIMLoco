@@ -71,7 +71,37 @@ class TestTurnScoring(unittest.TestCase):
         for f in range(4):d['states'][:,:,c[f'foot_world_z_{f}']]=.021
         r=self.evaluate(m,d)
         self.assertEqual(r['metrics']['normal_touchdown_fraction'],0)
+        self.assertEqual(r['metrics']['touchdowns_per_foot_per_s'],0)
+        self.assertFalse(r['minimum_lift_pass'])
         self.assertLess(r['components']['feet'],30)
+
+    def test_one_cm_boundary_and_half_hz_are_inclusive(self):
+        m,d,c=self.fixture(False,turn=4.)
+        for start in (160,260):
+            for f in range(4):
+                d['states'][start:start+11,0,c[f'foot_fz_{f}']]=0
+                d['states'][start:start+11,0,c[f'foot_world_z_{f}']]=.03
+        r=self.evaluate(m,d)
+        self.assertTrue(r['minimum_lift_pass'])
+        self.assertAlmostEqual(r['metrics']['touchdowns_per_foot_per_s'],.5)
+        for f in range(4):
+            d['states'][:,0,c[f'foot_world_z_{f}']]=.029
+        r=self.evaluate(m,d)
+        self.assertFalse(r['minimum_lift_pass'])
+        self.assertEqual(r['metrics']['touchdowns_per_foot_per_s'],0)
+
+    def test_one_inactive_foot_fails_minimum(self):
+        m,d,c=self.fixture()
+        d['states'][:,0,c['foot_fz_0']]=10
+        self.assertFalse(self.evaluate(m,d)['minimum_lift_pass'])
+
+    def test_early_burst_cannot_hide_late_no_lift_window(self):
+        m,d,c=self.fixture()
+        for f in range(4):d['states'][400:650,0,c[f'foot_fz_{f}']]=10
+        r=self.evaluate(m,d)
+        self.assertTrue(all(x >= .5 for x in r['diagnostics']['qualified_lift_rates_per_foot_hz']))
+        self.assertEqual(r['metrics']['touchdowns_per_foot_per_s'],0)
+        self.assertFalse(r['minimum_lift_pass'])
 
     def test_invalid_standards_are_rejected(self):
         cfg=copy.deepcopy(score.DEFAULT);cfg['weights']['feet']=50

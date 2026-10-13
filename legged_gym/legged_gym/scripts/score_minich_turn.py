@@ -15,10 +15,10 @@ import sys
 import numpy as np
 
 DEFAULT = {
-    'version': 'draft-1', 'weights': {'turn': 40., 'feet': 30., 'stop': 30.},
+    'version': 'lift-minimum-v2', 'weights': {'turn': 40., 'feet': 30., 'stop': 30.},
     'contact_N': 1., 'stance_contact_N': 5., 'stand_grace_s': 1.,
     'stable_hold_s': .5, 'stable_yaw_rad_s': .02, 'stable_xy_m_s': .01,
-    'turn_settle_s': 2., 'require_steps': True,
+    'turn_settle_s': 2., 'require_steps': True, 'lift_frequency_window_s': 4.,
     # Pairs mean [full-score threshold, zero-score threshold].
     'limits': {
         'yaw_relative_rmse': [.08, .50], 'turn_max_drift_m': [.03, .30],
@@ -27,10 +27,10 @@ DEFAULT = {
         'settling_time_s': [1., 3.], 'stop_yaw_rmse_rad_s': [.02, .10],
         'stop_xy_speed_m_s': [.01, .08], 'stop_abs_angle_after_grace_deg': [3., 30.],
         'stop_all_contact_fraction': [.98, .50],
-        'normal_touchdown_fraction': [.8, .2], 'touchdowns_per_foot_per_s': [.2, 0.],
+        'normal_touchdown_fraction': [.8, .2], 'touchdowns_per_foot_per_s': [.5, 0.],
         'alternating_touchdown_fraction': [.8, .2], 'turn_two_support_fraction': [.98, .50],
     },
-    'normal_flight_s': [.20, .30], 'ground_foot_center_m': .02, 'minimum_lift_clearance_m': .02,
+    'normal_flight_s': [.20, .30], 'ground_foot_center_m': .02, 'minimum_lift_clearance_m': .01,
 }
 
 
@@ -47,7 +47,7 @@ def validate(cfg):
         higher = key in ('stop_all_contact_fraction','normal_touchdown_fraction','touchdowns_per_foot_per_s','alternating_touchdown_fraction','turn_two_support_fraction')
         if (pair[0]>pair[1]) != higher or min(pair)<0:
             raise ValueError('Threshold direction is invalid: '+key)
-    for key in ('contact_N','stance_contact_N','stand_grace_s','stable_hold_s','stable_yaw_rad_s','stable_xy_m_s','turn_settle_s'):
+    for key in ('contact_N','stance_contact_N','stand_grace_s','stable_hold_s','stable_yaw_rad_s','stable_xy_m_s','turn_settle_s','lift_frequency_window_s'):
         if not np.isfinite(cfg[key]) or cfg[key] <= 0: raise ValueError('Invalid '+key)
     for key in ('ground_foot_center_m','minimum_lift_clearance_m'):
         if not np.isfinite(cfg[key]) or cfg[key] <= 0: raise ValueError('Invalid '+key)
@@ -90,6 +90,7 @@ def evaluate(meta, data, robot, cfg):
     # are excluded from optional normal-touchdown quality/counts.
     foot_height=cols(states,'foot_world_z_')
     air=np.zeros(4); prev=np.zeros(4,dtype=bool); touchdowns=[]; counts=np.zeros(4); events=[]; peaks=[]; peak=np.full(4,cfg['ground_foot_center_m'])
+    qualified = np.zeros((end-lo, 4), dtype=int)
     for step in range(end):
         peak=np.maximum(peak,foot_height[step])
         filtered=contact[step]|prev; first=(air>0)&filtered; air+=dt
@@ -97,12 +98,22 @@ def evaluate(meta, data, robot, cfg):
             event=set()
             for f in np.flatnonzero(first):
                 if (step+1)*dt-air[f]>=before-dt/2:
-                    touchdowns.append(float(air[f]));peaks.append(float(peak[f]-cfg['ground_foot_center_m']));counts[f]+=1;event.add(int(f))
+                    clearance = float(peak[f]-cfg['ground_foot_center_m'])
+                    touchdowns.append(float(air[f]));peaks.append(clearance);counts[f]+=1
+                    if clearance >= cfg['minimum_lift_clearance_m'] - 1e-6:
+                        qualified[step-lo, f] = 1
+                        event.add(int(f))
             if event:
                 if events and (step-events[-1][0])*dt<=.04+1e-6:
                     events[-1][1].update(event)
                 else: events.append((step,event))
         air*=~filtered;peak[filtered]=cfg['ground_foot_center_m'];prev=contact[step]
+    # Count completed lifts in every rolling window; the least active foot governs.
+    window_steps = min(end-lo, max(1, round(cfg['lift_frequency_window_s']/dt)))
+    window_s = window_steps * dt
+    cumulative = np.vstack((np.zeros((1,4), dtype=int), np.cumsum(qualified, axis=0)))
+    window_counts = cumulative[window_steps:] - cumulative[:-window_steps]
+    minimum_rates = window_counts.min(axis=0) / window_s
     xy=lambda s: np.linalg.norm(s[:,[c['body_vx'],c['body_vy']]],axis=1)
     wz=stand[:,c['body_wz']]
     stable=(np.abs(wz)<=cfg['stable_yaw_rad_s']) & (xy(stand)<=cfg['stable_xy_m_s']) & np.all(contact[end:],axis=1)
@@ -123,7 +134,7 @@ def evaluate(meta, data, robot, cfg):
         'stop_abs_angle_after_grace_deg':float(np.rad2deg(np.abs(late[:,c['body_wz']]).sum()*dt)),
         'stop_all_contact_fraction':float(np.all(contact[end+grace:],axis=1).mean()),
         'normal_touchdown_fraction':float(np.mean((np.array(touchdowns)>=cfg['normal_flight_s'][0]-1e-6)&(np.array(touchdowns)<=cfg['normal_flight_s'][1]+1e-6)&(np.array(peaks)>=cfg['minimum_lift_clearance_m']-1e-6))) if touchdowns else 0.,
-        'touchdowns_per_foot_per_s':float(counts.min()/turn),
+        'touchdowns_per_foot_per_s':float(minimum_rates.min()),
         'alternating_touchdown_fraction':float(np.mean([not (a[1]&b[1]) for a,b in zip(events,events[1:])])) if len(events)>1 else 0.,
         'turn_two_support_fraction':float((contact[lo:end].sum(axis=1)>=2).mean()),
     }
@@ -137,9 +148,14 @@ def evaluate(meta, data, robot, cfg):
     fell=bool((states[:,c['z']]<.13).any() or (states[:,c['gravity_z']]>-.7).any())
     points={k:fractions[k]*cfg['weights'][k] for k in fractions}
     return {'policy':meta['policies'][robot],'target_yaw_rad_s':command,'turn_duration_s':turn,
-            'total':0. if fell else sum(points.values()), 'fell':fell, 'components':points,'metrics':metrics,
+            'total':0. if fell else sum(points.values()), 'fell':fell,
+            'minimum_lift_pass':bool(not fell and np.all(minimum_rates >= cfg['limits']['touchdowns_per_foot_per_s'][0]-1e-6)), 'components':points,'metrics':metrics,
             'metric_scores':{k:v*100 for k,v in g.items()},'deductions':[k for k,v in g.items() if v<1 and (cfg['require_steps'] or k not in ('normal_touchdown_fraction','touchdowns_per_foot_per_s','alternating_touchdown_fraction','turn_two_support_fraction'))],
             'diagnostics':{'longest_flight_per_foot_s':flights,'touchdowns_per_foot':counts.tolist(),
+                           'qualified_lifts_per_foot':qualified.sum(axis=0).tolist(),
+                           'qualified_lift_rates_per_foot_hz':(qualified.sum(axis=0)/turn).tolist(),
+                           'minimum_window_lift_rates_per_foot_hz':minimum_rates.tolist(),
+                           'lift_frequency_window_s':window_s,
                            'touchdown_event_groups':[sorted(e[1]) for e in events],
                            'touchdown_clearance_m':peaks,
                            'turn_mean_yaw_rad_s':float(turn_s[:,c['body_wz']].mean()),
@@ -215,11 +231,11 @@ def main():
     ranking.sort(key=lambda r:r['mean'],reverse=True)
     result={'matching_case_matrices':comparable,'standards':cfg,'ranking':ranking,'cases':rows,'note':'Scores are provisional. Compare identical case matrices; slip is foot-body velocity proxy, not contact-point slip.'}
     (output/'scores.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
-    lines=['# 原地旋转跑分（满分100，标准初稿）','','不同测试矩阵不应直接比较均分；摔倒场景总分归零。支撑足滑动采用足刚体水平速度代理。','',f"| 策略 | 目标 rad/s | 旋转秒数 | 旋转 /{cfg['weights']['turn']:g} | 足端 /{cfg['weights']['feet']:g} | 停止 /{cfg['weights']['stop']:g} | 总分 |",'|---|---:|---:|---:|---:|---:|---:|']
+    lines=['# 原地旋转跑分（满分100，标准初稿）','','不同测试矩阵不应直接比较均分；摔倒场景总分归零。支撑足滑动采用足刚体水平速度代理。','',f"| 策略 | 目标 rad/s | 旋转秒数 | 旋转 /{cfg['weights']['turn']:g} | 足端 /{cfg['weights']['feet']:g} | 停止 /{cfg['weights']['stop']:g} | 总分 | 最低抬脚标准 |",'|---|---:|---:|---:|---:|---:|---:|---|']
     if not comparable: lines[2] += ' 本次策略测试矩阵不一致，均分排名不能直接比较。'
     for r in rows:
         a=r.get('components',{'turn':0,'feet':0,'stop':0})
-        lines.append(f"| {Path(r['policy']['path']).parent.name}/{Path(r['policy']['path']).name} | {r.get('target_yaw_rad_s',0):g} | {r.get('turn_duration_s',0):g} | {a['turn']:.1f} | {a['feet']:.1f} | {a['stop']:.1f} | {r['total']:.1f} |")
+        lines.append(f"| {Path(r['policy']['path']).parent.name}/{Path(r['policy']['path']).name} | {r.get('target_yaw_rad_s',0):g} | {r.get('turn_duration_s',0):g} | {a['turn']:.1f} | {a['feet']:.1f} | {a['stop']:.1f} | {r['total']:.1f} | {'通过' if r.get('minimum_lift_pass',False) else '未通过'} |")
     lines+=['','各项原始指标、扣分原因及满分/零分阈值见 scores.json。未要求抬脚时，正常落脚率只作诊断，不影响总分。']
     (output/'scores.md').write_text('\n'.join(lines)+'\n')
     print('\n'.join(lines));print('Saved to',output)

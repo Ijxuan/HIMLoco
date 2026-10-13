@@ -106,9 +106,9 @@
     <link name="FR_hip">
         <inertial>
             <mass value="0.54"/>
-            <origin xyz="0.0 0.036 0."/>
-            <inertia ixx="0.000381" ixy="0.000058" ixz="0.00000045" 
-                iyy="0.000560" iyz="0.00000095" izz="0.000444"/>
+            <origin xyz="0.0 -0.036 0."/>
+            <inertia ixx="0.000381" ixy="-0.000058" ixz="0.00000045"
+                iyy="0.000560" iyz="-0.00000095" izz="0.000444"/>
         </inertial>
         <visual>
             <geometry>
@@ -135,9 +135,9 @@
     <link name="FR_thigh">
         <inertial>
             <mass value="2.136"/>
-            <origin xyz="0.0 0.016 -0.02"/>
-            <inertia ixx="0.006681" ixy="0.000825" ixz="0.000044" 
-                iyy="0.007085" iyz="0.0000051" izz="0.001375"/>
+            <origin xyz="0.0 -0.016 -0.02"/>
+            <inertia ixx="0.006681" ixy="-0.000825" ixz="0.000044"
+                iyy="0.007085" iyz="-0.0000051" izz="0.001375"/>
         </inertial>
         <visual>
             <geometry>
@@ -331,9 +331,9 @@
     <link name="RR_hip">
         <inertial>
             <mass value="0.54"/>
-            <origin xyz="0.0 0.036 0."/>
-            <inertia ixx="0.000381" ixy="0.000058" ixz="0.00000045" 
-                iyy="0.000560" iyz="0.00000095" izz="0.000444"/>
+            <origin xyz="0.0 -0.036 0."/>
+            <inertia ixx="0.000381" ixy="-0.000058" ixz="0.00000045"
+                iyy="0.000560" iyz="-0.00000095" izz="0.000444"/>
         </inertial>
         <visual>
             <geometry>
@@ -360,9 +360,9 @@
     <link name="RR_thigh">
         <inertial>
             <mass value="2.136"/>
-            <origin xyz="0.0 0.016 -0.02"/>
-            <inertia ixx="0.006681" ixy="0.000825" ixz="0.000044" 
-                iyy="0.007085" iyz="0.0000051" izz="0.001375"/>
+            <origin xyz="0.0 -0.016 -0.02"/>
+            <inertia ixx="0.006681" ixy="-0.000825" ixz="0.000044"
+                iyy="0.007085" iyz="-0.0000051" izz="0.001375"/>
         </inertial>
         <visual>
             <geometry>

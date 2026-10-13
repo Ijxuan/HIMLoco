@@ -1,5 +1,5 @@
 {
-  "version": "draft-1",
+  "version": "lift-minimum-v2",
   "weights": {
     "turn": 40.0,
     "feet": 30.0,
@@ -59,7 +59,7 @@
       0.2
     ],
     "touchdowns_per_foot_per_s": [
-      0.2,
+      0.5,
       0.0
     ],
     "alternating_touchdown_fraction": [
@@ -76,5 +76,6 @@
     0.3
   ],
   "ground_foot_center_m": 0.02,
-  "minimum_lift_clearance_m": 0.02
+  "minimum_lift_clearance_m": 0.01,
+  "lift_frequency_window_s": 4.0
 }

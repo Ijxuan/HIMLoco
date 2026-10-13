@@ -205,6 +205,9 @@ class LeggedRobot(BaseTask):
         self.last_dof_vel[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
         self.feet_air_time_penalty_active[env_ids] = False
+        if hasattr(self, "turn_lift_ages"):
+            self._reset_turn_lift_buffers(env_ids)
+            self.last_contacts[env_ids] = False
         self.raibert_last_contacts[env_ids] = False
         self.raibert_contact_initialized[env_ids] = False
         self.reset_buf[env_ids] = 1
@@ -797,6 +800,8 @@ class LeggedRobot(BaseTask):
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.feet_air_time_penalty_active = torch.zeros_like(self.feet_air_time, dtype=torch.bool)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        if getattr(self.cfg.rewards, "turn_lift_min_clearance", None) is not None:
+            self._init_turn_lift_buffers()
         self.raibert_last_contacts = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
         self.raibert_contact_initialized = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
@@ -1358,6 +1363,68 @@ class LeggedRobot(BaseTask):
         # penalize torques too close to the limit
         return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
 
+    def _init_turn_lift_buffers(self):
+        cfg = self.cfg.rewards
+        values = (cfg.turn_lift_min_clearance, cfg.turn_lift_min_frequency,
+                  cfg.turn_lift_window_s, cfg.turn_lift_foot_radius,
+                  cfg.turn_lift_frequency_cost)
+        if any(not np.isfinite(v) or v <= 0 for v in values):
+            raise ValueError("Turn lift parameters must be positive and finite")
+        count = cfg.turn_lift_min_frequency * cfg.turn_lift_window_s
+        if abs(count - round(count)) > 1e-6 or count < 1:
+            raise ValueError("Turn lift window * frequency must be a positive integer")
+        shape = self.feet_air_time.shape
+        self.turn_lift_ages = torch.full((*shape, int(round(count))),
+                                        cfg.turn_lift_window_s + 1., device=self.device)
+        self.turn_lift_peak = torch.zeros_like(self.feet_air_time)
+        self.turn_lift_eligible = torch.zeros_like(self.feet_air_time, dtype=torch.bool)
+        self.turn_lift_elapsed = torch.zeros(shape[0], device=self.device)
+
+    def _reset_turn_lift_buffers(self, env_ids):
+        self.turn_lift_ages[env_ids] = self.cfg.rewards.turn_lift_window_s + 1.
+        self.turn_lift_peak[env_ids] = 0.
+        self.turn_lift_eligible[env_ids] = False
+        self.turn_lift_elapsed[env_ids] = 0.
+
+    def _turn_lift_touchdown_reward(self, first_contact, contact_filt,
+                                   previous_air_time, in_place_turn):
+        """Qualified touchdowns plus dense per-foot rolling-frequency deficit.
+
+        Uses foot sole clearance above local terrain. Only flights begun in the
+        current continuous turn qualify; count is independent of flight duration.
+        Extra frequent steps fill the history but do not earn repeated bonuses
+        while a foot already meets the window quota.
+        """
+        cfg = self.cfg.rewards
+        window = cfg.turn_lift_window_s
+        active = in_place_turn.unsqueeze(1)
+        self._reset_turn_lift_buffers(~in_place_turn)
+        self.turn_lift_elapsed = torch.where(in_place_turn,
+            torch.clamp(self.turn_lift_elapsed + self.dt, max=window),
+            self.turn_lift_elapsed)
+        self.turn_lift_ages.add_(self.dt).clamp_(max=window + 1.)
+        started = (previous_air_time == 0.) & ~contact_filt & active
+        self.turn_lift_eligible |= started
+        clearance = self._get_feet_heights() - cfg.turn_lift_foot_radius
+        self.turn_lift_peak = torch.where(self.turn_lift_eligible & ~contact_filt,
+            torch.maximum(self.turn_lift_peak, clearance), self.turn_lift_peak)
+        valid = (first_contact & self.turn_lift_eligible & active
+                 & (self.turn_lift_peak >= cfg.turn_lift_min_clearance - 1e-6))
+        # (t-window, t] matches the offline sliding-window sample convention.
+        before = (self.turn_lift_ages < window - 1e-6).sum(dim=-1)
+        quota = self.turn_lift_ages.shape[-1]
+        bonus = (valid & (before < quota)).float().sum(dim=1)
+        shifted = torch.cat((torch.zeros_like(self.turn_lift_ages[..., :1]),
+                             self.turn_lift_ages[..., :-1]), dim=-1)
+        self.turn_lift_ages = torch.where(valid.unsqueeze(-1), shifted, self.turn_lift_ages)
+        counts = (self.turn_lift_ages < window - 1e-6).sum(dim=-1)
+        expected = self.turn_lift_elapsed.unsqueeze(1) * cfg.turn_lift_min_frequency
+        deficit = torch.clamp(expected - counts, min=0.) / quota
+        cost = cfg.turn_lift_frequency_cost * deficit.mean(dim=1) * in_place_turn
+        self.turn_lift_peak.masked_fill_(contact_filt, 0.)
+        self.turn_lift_eligible &= ~contact_filt
+        return bonus - cost
+
     def _reward_feet_air_time(self):
         # Score normal/short flights at touchdown. With a target interval,
         # settle the extra cost beyond the upper bound incrementally.
@@ -1399,10 +1466,15 @@ class LeggedRobot(BaseTask):
                 in_place_turn.unsqueeze(1) & (overdue_cost > 0.)
                 & ((previous_air_time > 0.) | ~contact_filt)
             )
-        rew_airTime = torch.sum(
-            air_time_score * first_contact * in_place_turn.unsqueeze(1)
-            - overdue_cost * self.feet_air_time_penalty_active, dim=1
-        )
+        if getattr(self.cfg.rewards, "turn_lift_min_clearance", None) is not None:
+            rew_airTime = self._turn_lift_touchdown_reward(
+                first_contact, contact_filt, previous_air_time, in_place_turn)
+            rew_airTime -= torch.sum(overdue_cost * self.feet_air_time_penalty_active, dim=1)
+        else:
+            rew_airTime = torch.sum(
+                air_time_score * first_contact * in_place_turn.unsqueeze(1)
+                - overdue_cost * self.feet_air_time_penalty_active, dim=1
+            )
         self.feet_air_time_penalty_active &= ~contact_filt
         self.feet_air_time *= ~contact_filt
         return rew_airTime
