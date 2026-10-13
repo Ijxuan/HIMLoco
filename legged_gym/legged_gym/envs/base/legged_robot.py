@@ -547,12 +547,8 @@ class LeggedRobot(BaseTask):
         self.in_place_turn_buf[env_ids] = long_turn | short_turn
         in_place_turn_env_ids = env_ids[self.in_place_turn_buf[env_ids]]
         self.commands[in_place_turn_env_ids, :2] = 0.
-        self.commands[in_place_turn_env_ids, 2] = torch_rand_float(
-            self.command_ranges["ang_vel_yaw"][0],
-            self.command_ranges["ang_vel_yaw"][1],
-            (len(in_place_turn_env_ids), 1),
-            device=self.device,
-        ).squeeze(1)
+        self.commands[in_place_turn_env_ids, 2] = self._sample_in_place_turn_yaw(
+            len(in_place_turn_env_ids))
 
         high_vel_env_ids = env_ids[(env_ids < (self.num_envs * 0.2)) & ~self.in_place_turn_buf[env_ids]]
 
@@ -572,6 +568,28 @@ class LeggedRobot(BaseTask):
             short_turn_ids = env_ids[short_turn]
             self.command_steps_remaining[short_turn_ids] = self._sample_command_duration(
                 len(short_turn_ids), self.turn_duration_steps)
+
+    def _sample_in_place_turn_yaw(self, count):
+        """Uniformly sample the yaw range excluding the minimum-magnitude gap."""
+        low, high = self.command_ranges["ang_vel_yaw"]
+        minimum = getattr(self.cfg.commands, "in_place_turn_min_yaw_rate", 0.0)
+        if not math.isfinite(minimum) or minimum < 0:
+            raise ValueError("in_place_turn_min_yaw_rate must be finite and nonnegative")
+        # Keep legacy sampling and explicitly zeroed diagnostic ranges supported.
+        if minimum == 0 or (low == 0 and high == 0):
+            return torch_rand_float(low, high, (count, 1), device=self.device).squeeze(1)
+        negative_high = min(high, -minimum)
+        positive_low = max(low, minimum)
+        negative_width = max(0.0, negative_high - low)
+        positive_width = max(0.0, high - positive_low)
+        if negative_width + positive_width <= 0:
+            raise ValueError("ang_vel_yaw range must contain a nonempty interval outside the turn gap")
+        sample = torch_rand_float(0.0, negative_width + positive_width,
+                                  (count, 1), device=self.device).squeeze(1)
+        return torch.where(
+            sample < negative_width,
+            torch.clamp(low + sample, max=negative_high),
+            torch.clamp(positive_low + sample - negative_width, min=positive_low, max=high))
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -671,7 +689,7 @@ class LeggedRobot(BaseTask):
         # A non-timeout termination is treated as a fall and demotes the terrain level.
         in_place_turn = (
             (torch.norm(self.commands[env_ids, :2], dim=1) < 0.1)
-            & (torch.abs(self.commands[env_ids, 2]) > 0.2)
+            & (torch.abs(self.commands[env_ids, 2]) >= 0.2)
         )
         fell = ~self.time_out_buf[env_ids]
         move_up = torch.where(in_place_turn, torch.zeros_like(move_up), move_up)
@@ -1374,7 +1392,7 @@ class LeggedRobot(BaseTask):
         # pays overdue cost while turning, keep paying until filtered contact.
         in_place_turn = (
             (torch.norm(self.commands[:, :2], dim=1) < 0.1)
-            & (torch.abs(self.commands[:, 2]) > 0.2)
+            & (torch.abs(self.commands[:, 2]) >= 0.2)
         )
         if target is not None:
             self.feet_air_time_penalty_active |= (

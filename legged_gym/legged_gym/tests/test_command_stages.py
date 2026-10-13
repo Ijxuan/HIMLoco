@@ -90,6 +90,35 @@ class TestCommandStages(unittest.TestCase):
         r._update_command_stages()
         self.assertTrue(torch.equal(r.command_stage == r.COMMAND_STAND, short))
 
+    def test_minich_turn_gap_preserves_scenarios_and_uniform_distribution(self):
+        torch.manual_seed(2026)
+        r = self.make_robot(120000)
+        r.cfg.commands.in_place_turn_min_yaw_rate = .2
+        r._resample_commands(torch.arange(r.num_envs))
+        for stage, expected in [(r.COMMAND_NORMAL, .8), (r.COMMAND_TURN, .1),
+                                (r.COMMAND_TURN_TO_STAND, .1)]:
+            self.assertAlmostEqual((r.command_stage == stage).float().mean().item(), expected, delta=.003)
+        for stage in (r.COMMAND_TURN, r.COMMAND_TURN_TO_STAND):
+            yaw = r.commands[r.command_stage == stage, 2]
+            self.assertTrue(torch.all((yaw.abs() >= .2) & (yaw.abs() <= 1.)))
+            self.assertAlmostEqual((yaw > 0).float().mean().item(), .5, delta=.02)
+            self.assertAlmostEqual(yaw.abs().mean().item(), .6, delta=.015)
+            self.assertAlmostEqual(yaw.square().mean().item(), (1 + .2 + .2 ** 2) / 3, delta=.015)
+        short = r.command_stage == r.COMMAND_TURN_TO_STAND
+        r.command_steps_remaining[short] = 1
+        r._update_command_stages()
+        self.assertTrue(torch.all(r.command_stage[short] == r.COMMAND_STAND))
+        self.assertTrue(torch.all(r.commands[short, :3] == 0))
+
+    def test_turn_gap_allows_zero_diagnostic_range_and_rejects_empty_range(self):
+        r = self.make_robot()
+        r.cfg.commands.in_place_turn_min_yaw_rate = .2
+        r.command_ranges['ang_vel_yaw'] = [0., 0.]
+        self.assertTrue(torch.all(r._sample_in_place_turn_yaw(8) == 0))
+        r.command_ranges['ang_vel_yaw'] = [-.1, .1]
+        with self.assertRaisesRegex(ValueError, 'nonempty interval'):
+            r._sample_in_place_turn_yaw(8)
+
     def test_duration_bounds_and_independent_clocks(self):
         r = self.make_robot(10000)
         r.cfg.commands.in_place_turn_probability = 0.

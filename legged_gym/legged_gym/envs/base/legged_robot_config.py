@@ -74,6 +74,7 @@ class LeggedRobotCfg(BaseConfig):
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
         in_place_turn_probability = 0.0
+        in_place_turn_min_yaw_rate = 0.0  # [rad/s], minimum sampled turn magnitude
         in_place_turn_duration_s = 10.0
         enable_turn_to_stand = False
         # Additional, mutually exclusive short-turn -> stand scenario probability.

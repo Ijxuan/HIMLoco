@@ -68,7 +68,7 @@ class TestAirTimeContinuousCost(unittest.TestCase):
         self.assertAlmostEqual(actual, 50 * .04 - 14 * .02, places=4)
 
     def test_turn_cost_continues_until_touchdown_after_command_change(self):
-        for command in ((0., 0., 0.), (.2, 0., .25), (0., 0., .2)):
+        for command in ((0., 0., 0.), (.2, 0., .25), (0., 0., .19)):
             with self.subTest(command=command):
                 r = self.make_robot()
                 for _ in range(20):
@@ -107,7 +107,7 @@ class TestAirTimeContinuousCost(unittest.TestCase):
         self.assertAlmostEqual(r._reward_feet_air_time().item(), -.4, places=5)
 
     def test_yaw_threshold_translation_and_stance_remain_gated(self):
-        for command in ((0., 0., .2), (.2, 0., .25), (0., 0., 0.)):
+        for command in ((0., 0., .19), (.2, 0., .25), (0., 0., 0.)):
             r = self.make_robot()
             r.commands[:, :3] = torch.tensor(command)
             r.feet_air_time[:, 0] = 1.
@@ -117,6 +117,14 @@ class TestAirTimeContinuousCost(unittest.TestCase):
         for _ in range(30):
             self.assertEqual(r._reward_feet_air_time().item(), 0.)
         self.assertTrue(torch.all(r.feet_air_time == 0))
+
+    def test_minimum_yaw_boundary_activates_turn_cost_in_both_directions(self):
+        for yaw in (-.2, .2):
+            r = self.make_robot()
+            r.commands[:, 2] = yaw
+            r.feet_air_time[:, 0] = 1.
+            self.assertAlmostEqual(r._reward_feet_air_time().item(), -.4, places=5)
+            self.assertTrue(r.feet_air_time_penalty_active[0, 0])
 
     def test_legacy_without_target_keeps_touchdown_formula(self):
         r = self.make_robot(target=False)
