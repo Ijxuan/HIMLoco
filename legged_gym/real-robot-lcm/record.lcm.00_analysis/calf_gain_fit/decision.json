@@ -1,0 +1,8 @@
+{
+  "adopted_new_gains": false,
+  "training_calf_kp": 34.0,
+  "training_calf_kd": 0.8,
+  "gain_condition_combinations": 236,
+  "deployment_changed": false,
+  "reason": "Gain ranking changes when non-calf trajectories are conditioned; response phase and bias remain unmatched."
+}

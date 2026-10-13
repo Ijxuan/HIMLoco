@@ -1,0 +1,80 @@
+{
+  "version": "draft-1",
+  "weights": {
+    "turn": 40.0,
+    "feet": 30.0,
+    "stop": 30.0
+  },
+  "contact_N": 1.0,
+  "stance_contact_N": 5.0,
+  "stand_grace_s": 1.0,
+  "stable_hold_s": 0.5,
+  "stable_yaw_rad_s": 0.02,
+  "stable_xy_m_s": 0.01,
+  "turn_settle_s": 2.0,
+  "require_steps": true,
+  "limits": {
+    "yaw_relative_rmse": [
+      0.08,
+      0.5
+    ],
+    "turn_max_drift_m": [
+      0.03,
+      0.3
+    ],
+    "longest_flight_s": [
+      0.3,
+      2.0
+    ],
+    "stance_slip_mean_m_s": [
+      0.005,
+      0.05
+    ],
+    "stance_slip_p95_m_s": [
+      0.02,
+      0.15
+    ],
+    "settling_time_s": [
+      1.0,
+      3.0
+    ],
+    "stop_yaw_rmse_rad_s": [
+      0.02,
+      0.1
+    ],
+    "stop_xy_speed_m_s": [
+      0.01,
+      0.08
+    ],
+    "stop_abs_angle_after_grace_deg": [
+      3.0,
+      30.0
+    ],
+    "stop_all_contact_fraction": [
+      0.98,
+      0.5
+    ],
+    "normal_touchdown_fraction": [
+      0.8,
+      0.2
+    ],
+    "touchdowns_per_foot_per_s": [
+      0.2,
+      0.0
+    ],
+    "alternating_touchdown_fraction": [
+      0.8,
+      0.2
+    ],
+    "turn_two_support_fraction": [
+      0.98,
+      0.5
+    ]
+  },
+  "normal_flight_s": [
+    0.2,
+    0.3
+  ],
+  "ground_foot_center_m": 0.02,
+  "minimum_lift_clearance_m": 0.02
+}
