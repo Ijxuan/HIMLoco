@@ -59,6 +59,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class rewards(LeggedRobotCfg.rewards):
         soft_dof_pos_limit = 0.9
+        log_phase_rewards = True
         class scales(LeggedRobotCfg.rewards.scales):
             tracking_lin_vel = 1.0
             tracking_ang_vel = 1.0
@@ -80,6 +81,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_vel_limits = 0.0
             torque_limits = 0.0
             raibert_heuristic = -10.0
+            hip_mirror = -1.0  # -(front + rear absolute mirror error), angles in rad.
 
         base_height_target = 0.26
         # Turn lifts: >=1 cm sole clearance, >=0.5 Hz per foot in a 4 s window.

@@ -247,11 +247,18 @@ class LeggedRobot(BaseTask):
             adds each terms to the episode sums and to the total reward
         """
         self.rew_buf[:] = 0.
+        phase_logger = getattr(self, "phase_reward_logger", None)
+        phase_rewards = {} if phase_logger is not None else None
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
             rew = self.reward_functions[i]() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+            if phase_rewards is not None:
+                phase_rewards[name] = rew
+        if phase_logger is not None:
+            clipped = ((self.rew_buf < 0.) if self.cfg.rewards.only_positive_rewards
+                       else torch.zeros_like(self.rew_buf, dtype=torch.bool))
         if self.cfg.rewards.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
         # add termination reward after clipping
@@ -259,6 +266,15 @@ class LeggedRobot(BaseTask):
             rew = self._reward_termination() * self.reward_scales["termination"]
             self.rew_buf += rew
             self.episode_sums["termination"] += rew
+            if phase_rewards is not None:
+                phase_rewards["termination"] = rew
+        if phase_logger is not None:
+            phase_logger.update(self.commands, phase_rewards, self.rew_buf,
+                                clipped.to(self.rew_buf.dtype))
+
+    def pop_phase_reward_logs(self):
+        logger = getattr(self, "phase_reward_logger", None)
+        return logger.pop() if logger is not None else {}
     
     def compute_observations(self):
         """ Computes observations
@@ -880,6 +896,12 @@ class LeggedRobot(BaseTask):
         # reward episode sums
         self.episode_sums = {name: torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
                              for name in self.reward_scales.keys()}
+        self.phase_reward_logger = None
+        logging_cfg = getattr(getattr(self, "cfg", None), "rewards", None)
+        if getattr(logging_cfg, "log_phase_rewards", False):
+            from legged_gym.utils.phase_reward_logger import PhaseRewardLogger
+            self.phase_reward_logger = PhaseRewardLogger(
+                self.reward_scales.keys(), self.dt, self.device)
 
     def _create_ground_plane(self):
         """ Adds a ground plane to the simulation, sets friction and restitution based on the cfg.
@@ -1276,6 +1298,18 @@ class LeggedRobot(BaseTask):
         return feet_height
 
     #------------ reward functions----------------
+    def _reward_hip_mirror(self):
+        """Pairwise hip mirror error in radians, gated by in-place turn commands."""
+        in_place_turn = (
+            (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+            & (torch.abs(self.commands[:, 2]) >= 0.2)
+        )
+        # DOF order: FL, FR, RL, RR; each leg has hip, thigh, calf.
+        # Mirrored ab/adduction has opposite signed joint angles.
+        front_error = torch.abs(self.dof_pos[:, 0] + self.dof_pos[:, 3])
+        rear_error = torch.abs(self.dof_pos[:, 6] + self.dof_pos[:, 9])
+        return (front_error + rear_error) * in_place_turn
+
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)

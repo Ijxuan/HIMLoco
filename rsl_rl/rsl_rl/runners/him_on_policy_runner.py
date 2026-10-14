@@ -94,6 +94,9 @@ class HIMOnPolicyRunner:
         critic_obs = privileged_obs if privileged_obs is not None else obs
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
         self.alg.actor_critic.train() # switch to train mode (for dropout for example)
+        # Exclude initialization/reset steps outside this learning call.
+        if hasattr(self.env, 'pop_phase_reward_logs'):
+            self.env.pop_phase_reward_logs()
 
         ep_infos = []
         rewbuffer = deque(maxlen=100)
@@ -134,6 +137,8 @@ class HIMOnPolicyRunner:
 
                 stop = time.time()
                 collection_time = stop - start
+                phase_reward_log = (self.env.pop_phase_reward_logs()
+                                    if hasattr(self.env, 'pop_phase_reward_logs') else {})
 
                 # Learning step
                 start = stop
@@ -154,6 +159,8 @@ class HIMOnPolicyRunner:
     def log(self, locs, width=80, pad=35):
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
         self.tot_time += locs['collection_time'] + locs['learn_time']
+        for key, value in locs.get('phase_reward_log', {}).items():
+            self.writer.add_scalar(key, value, locs['it'])
         iteration_time = locs['collection_time'] + locs['learn_time']
 
         ep_string = f''
@@ -170,6 +177,17 @@ class HIMOnPolicyRunner:
                 value = torch.mean(infotensor)
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+        phase_metrics = locs.get('phase_reward_log', {})
+        for phase in ('turn', 'translate', 'stand', 'turn_positive', 'turn_negative'):
+            prefix = 'PhaseReward/' + phase + '/'
+            count = phase_metrics.get(prefix + 'samples', 0)
+            if count:
+                terms = []
+                for key in ('rew_feet_air_time', 'rew_tracking_ang_vel',
+                            'rew_tracking_lin_vel', 'total_policy'):
+                    if prefix + key in phase_metrics:
+                        terms.append(f'{key}={phase_metrics[prefix + key]:.4f}')
+                ep_string += f"Phase {phase} (n={count:.0f}, reward/s): " + ', '.join(terms) + '\n'
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
