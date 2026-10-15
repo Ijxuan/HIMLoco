@@ -37,6 +37,7 @@ class TestObservationHistoryReset(unittest.TestCase):
         robot.disturbance = torch.ones(3, 1, 3)
         robot.feet_air_time = torch.ones(3, 4)
         robot.feet_air_time_penalty_active = torch.ones(3, 4, dtype=torch.bool)
+        robot.raibert_air_steps = torch.ones(3, 4, dtype=torch.long)
         robot.raibert_last_contacts = torch.ones(3, 4, dtype=torch.bool)
         robot.raibert_contact_initialized = torch.ones(3, dtype=torch.bool)
         robot.obs_history_reset_pending = torch.zeros(3, dtype=torch.bool)

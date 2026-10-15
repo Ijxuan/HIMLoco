@@ -42,7 +42,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class control(LeggedRobotCfg.control):
         control_type = "P"
-        stiffness = {"joint": 17.0, "calf_joint": 34.0}
+        stiffness = {"joint": 17.0, "calf_joint": 24.0}
         damping = {"joint": 0.4, "calf_joint": 0.8}
         action_scale = 0.25
         decimation = 4
@@ -105,6 +105,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         raibert_stance_length = 0.38
         raibert_stance_width = 0.276335
         raibert_prediction_time = 0.25
+        raibert_min_air_steps = 2  # Reject one-frame dropouts (dt=0.02s).
         raibert_contact_force_threshold = 1.0
         raibert_vx_command_threshold = 0.05
         raibert_yaw_command_threshold = 0.05

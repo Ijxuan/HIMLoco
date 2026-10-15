@@ -1,3 +1,4 @@
+import math
 import types
 import unittest
 
@@ -18,6 +19,7 @@ class TestRaibertTouchdownReward(unittest.TestCase):
         robot.root_states[:, 6] = 1.0
         robot.base_quat = robot.root_states[:, 3:7]
         robot.commands = torch.zeros(1, 4)
+        robot.raibert_air_steps = torch.zeros(1, 4, dtype=torch.long)
         robot.raibert_last_contacts = torch.zeros(1, 4, dtype=torch.bool)
         robot.raibert_contact_initialized = torch.zeros(1, dtype=torch.bool)
         robot.cfg = types.SimpleNamespace(
@@ -27,6 +29,7 @@ class TestRaibertTouchdownReward(unittest.TestCase):
                 raibert_stance_length=0.38,
                 raibert_stance_width=0.276335,
                 raibert_prediction_time=0.25,
+                raibert_min_air_steps=2,
                 raibert_contact_force_threshold=1.0,
                 raibert_vx_command_threshold=0.05,
                 raibert_yaw_command_threshold=0.05,
@@ -55,6 +58,7 @@ class TestRaibertTouchdownReward(unittest.TestCase):
         robot.commands[0, 0] = 1.0
         robot.raibert_contact_initialized[:] = True
         robot.raibert_last_contacts[:] = False
+        robot.raibert_air_steps[:] = 2
 
         center_x = -0.011010
         half_length = 0.19
@@ -82,6 +86,7 @@ class TestRaibertTouchdownReward(unittest.TestCase):
         robot.commands[0, 2] = 1.0
         robot.raibert_contact_initialized[:] = True
         robot.raibert_last_contacts[:] = False
+        robot.raibert_air_steps[:] = 2
         robot.contact_forces[0, robot.raibert_foot_indices, 2] = 2.0
 
         center_x = -0.011010
@@ -109,12 +114,114 @@ class TestRaibertTouchdownReward(unittest.TestCase):
         robot = self.make_robot()
         robot.raibert_contact_initialized[:] = True
         robot.raibert_last_contacts[:] = False
+        robot.raibert_air_steps[:] = 2
         robot.contact_forces[0, robot.raibert_foot_indices, 2] = 2.0
         robot.feet_pos[:, robot.raibert_foot_order, :2] = 0.0
 
         reward = robot._reward_raibert_heuristic()
 
         self.assertEqual(float(reward), 0.0)
+
+    def test_force_dropout_does_not_repeat_touchdown(self):
+        robot = self.make_robot()
+        robot.commands[0, 2] = .25
+        index = robot.raibert_foot_indices[0]
+        values = []
+        # Initialize support, reject short dropouts, then allow a true departure.
+        for force in (2., .9, 2., .9, 2., 0., 0., 2., 2., .9, 2.):
+            robot.contact_forces[0, index, 2] = force
+            values.append(robot._reward_raibert_heuristic().item())
+        self.assertGreater(values[7], 0.)
+        self.assertTrue(all(x == 0. for i, x in enumerate(values) if i != 7))
+
+    def test_each_foot_requires_consecutive_samples(self):
+        robot = self.make_robot();robot.commands[0, 2] = -.25
+        robot.contact_forces[:, robot.raibert_foot_indices, 2] = 2.
+        robot._reward_raibert_heuristic()
+        robot.contact_forces[:, robot.raibert_foot_indices[:2], 2] = 0.
+        robot._reward_raibert_heuristic()
+        # FL returns too early; FR remains below the threshold a second step.
+        robot.contact_forces[:, robot.raibert_foot_indices[0], 2] = 2.
+        self.assertEqual(robot._reward_raibert_heuristic().item(), 0.)
+        robot.contact_forces[:, robot.raibert_foot_indices[1], 2] = 2.
+        targets = robot._get_raibert_desired_foot_xy()
+        expected = targets[0, 1].square().sum().item()
+        self.assertAlmostEqual(robot._reward_raibert_heuristic().item(), expected)
+        self.assertEqual(robot._reward_raibert_heuristic().item(), 0.)
+
+    def test_command_gate_does_not_leave_pending_touchdown(self):
+        robot = self.make_robot()
+        for _ in range(3):robot._reward_raibert_heuristic()
+        robot.contact_forces[:, robot.raibert_foot_indices, 2] = 2.
+        self.assertEqual(robot._reward_raibert_heuristic().item(), 0.)
+        robot.commands[:, 2] = .25
+        self.assertEqual(robot._reward_raibert_heuristic().item(), 0.)
+
+    def test_reset_clears_only_selected_contact_counters(self):
+        import test_observation_history_reset as reset_tests
+        robot = reset_tests.TestObservationHistoryReset().make_robot()
+        robot.raibert_air_steps[:] = 2
+        robot.reset_idx(torch.tensor([1]))
+        self.assertTrue((robot.raibert_air_steps[1] == 0).all())
+        self.assertTrue((robot.raibert_air_steps[[0, 2]] == 2).all())
+        self.assertFalse(robot.raibert_contact_initialized[1])
+
+    def test_playback_reuses_targets_without_mutating_commands(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+        from play_minich_flat_height import get_raibert_desired_foot_xy
+        robot = self.make_robot()
+        saved = robot.commands.clone()
+        for command in ((0., 0., .25), (0., 0., -.25), (1., 0., 0.), (0., 0., 0.)):
+            displayed = get_raibert_desired_foot_xy(robot, command)
+            expected = robot._get_raibert_desired_foot_xy(torch.tensor([command]))
+            torch.testing.assert_close(displayed, expected)
+            torch.testing.assert_close(robot.commands, saved)
+        # Zero command still includes the nonzero stance-center offset.
+        xy = get_raibert_desired_foot_xy(robot, (0., 0., 0.))
+        self.assertAlmostEqual(xy[0, 0, 0].item(), .19-.011010, places=6)
+        # Batched current commands, with opposite turns, retain distinct targets.
+        robot.num_envs = 2
+        robot.commands = torch.tensor([[0., 0., .25], [0., 0., -.25]])
+        xy = get_raibert_desired_foot_xy(robot)
+        self.assertEqual(tuple(xy.shape), (2, 4, 2))
+        self.assertFalse(torch.allclose(xy[0], xy[1]))
+
+    def test_playback_reads_refreshed_rigid_states_not_cached_feet(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+        from play_minich_flat_height import get_raibert_foot_body_xy
+        robot = self.make_robot()
+        robot.num_bodies = 5
+        robot.rigid_body_states = torch.zeros(5, 13)
+        target = robot._get_raibert_desired_foot_xy()
+        robot.rigid_body_states[robot.raibert_foot_indices, :2] = target[0]
+        robot.feet_pos[:] = 99. # stale cached advanced-indexing copy
+        robot.sim = None
+        robot.gym = types.SimpleNamespace(
+            refresh_actor_root_state_tensor=lambda sim: None,
+            refresh_rigid_body_state_tensor=lambda sim: None)
+        torch.testing.assert_close(get_raibert_foot_body_xy(robot), target)
+
+    def test_world_yaw_rotation_does_not_change_body_frame_error(self):
+        from isaacgym.torch_utils import quat_rotate
+        robot = self.make_robot();robot.commands[0, 2] = .25
+        target = robot._get_raibert_desired_foot_xy()[0]
+        xyz = torch.cat((target, torch.full((4, 1), -.26)), dim=1)
+        xyz[0, 0] += .02
+        for yaw in (0., 1.2):
+            quat = torch.tensor([[0., 0., math.sin(yaw/2),
+                                  math.cos(yaw/2)]])
+            robot.root_states[0, :3] = torch.tensor([1., 2., .3])
+            robot.root_states[0, 3:7] = quat[0]
+            robot.feet_pos[:, robot.raibert_foot_order, :] = (
+                quat_rotate(quat.repeat(4, 1), xyz) + robot.root_states[0, :3])
+            robot.raibert_air_steps[:] = 2
+            robot.raibert_contact_initialized[:] = True
+            robot.contact_forces[:, robot.raibert_foot_indices, 2] = 2.
+            self.assertAlmostEqual(robot._reward_raibert_heuristic().item(), .02**2, places=6)
 
 
 if __name__ == "__main__":

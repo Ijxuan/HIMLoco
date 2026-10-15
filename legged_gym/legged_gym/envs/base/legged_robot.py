@@ -211,6 +211,7 @@ class LeggedRobot(BaseTask):
             self.turn_lift_frequency_reward[env_ids] = 0.
             self.turn_air_overdue_cost[env_ids] = 0.
             self.last_contacts[env_ids] = False
+        self.raibert_air_steps[env_ids] = 0
         self.raibert_last_contacts[env_ids] = False
         self.raibert_contact_initialized[env_ids] = False
         self.reset_buf[env_ids] = 1
@@ -827,6 +828,10 @@ class LeggedRobot(BaseTask):
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         if getattr(self.cfg.rewards, "turn_lift_min_clearance", None) is not None:
             self._init_turn_lift_buffers()
+        if (not isinstance(self.cfg.rewards.raibert_min_air_steps, int)
+                or self.cfg.rewards.raibert_min_air_steps < 1):
+            raise ValueError("raibert_min_air_steps must be a positive integer")
+        self.raibert_air_steps = torch.zeros(self.num_envs, 4, dtype=torch.long, device=self.device)
         self.raibert_last_contacts = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
         self.raibert_contact_initialized = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
@@ -1584,40 +1589,45 @@ class LeggedRobot(BaseTask):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
 
-    def _reward_raibert_heuristic(self):
-        """Penalize touchdown XY error using actual contact edges only.
-
-        The target is computed from the current command and current body yaw.
-        No gait phase, desired contact state, liftoff snapshot, or air-time is
-        used, so the term cannot impose a phase schedule on the policy.
-        """
-        contact = self.contact_forces[:, self.raibert_foot_indices, 2] > self.cfg.rewards.raibert_contact_force_threshold
-        newly_initialized = ~self.raibert_contact_initialized
-        touchdown = contact & ~self.raibert_last_contacts & ~newly_initialized.unsqueeze(1)
-        self.raibert_last_contacts = contact
-        self.raibert_contact_initialized |= torch.ones_like(self.raibert_contact_initialized)
-
-        command_active = (
-            (torch.abs(self.commands[:, 0]) > self.cfg.rewards.raibert_vx_command_threshold)
-            | (torch.abs(self.commands[:, 2]) > self.cfg.rewards.raibert_yaw_command_threshold)
-        )
-        touchdown &= command_active.unsqueeze(1)
-        if not torch.any(touchdown):
-            return torch.zeros(self.num_envs, device=self.device)
-
+    def _get_raibert_desired_foot_xy(self, commands=None):
+        """Return [env, FL/FR/RL/RR, XY] targets in the full body frame."""
+        if commands is None:
+            commands = self.commands
         half_length = 0.5 * self.cfg.rewards.raibert_stance_length
         half_width = 0.5 * self.cfg.rewards.raibert_stance_width
         stance_center_x = self.cfg.rewards.raibert_stance_center_x
         stance_center_y = self.cfg.rewards.raibert_stance_center_y
         x_nom = torch.tensor([half_length, half_length, -half_length, -half_length], device=self.device) + stance_center_x
         y_nom = torch.tensor([half_width, -half_width, half_width, -half_width], device=self.device) + stance_center_y
-        vx_cmd = self.commands[:, 0:1]
-        wz_cmd = self.commands[:, 2:3]
+        vx_cmd = commands[:, 0:1]
+        wz_cmd = commands[:, 2:3]
         prediction_time = self.cfg.rewards.raibert_prediction_time
-        desired_xy = torch.stack((
+        return torch.stack((
             x_nom.unsqueeze(0) + 0.5 * prediction_time * (vx_cmd - wz_cmd * y_nom.unsqueeze(0)),
             y_nom.unsqueeze(0) + 0.5 * prediction_time * (wz_cmd * x_nom.unsqueeze(0)),
         ), dim=-1)
+
+    def _reward_raibert_heuristic(self):
+        """Penalize XY error on contact after a confirmed low-force interval.
+
+        Targets use current commands in the full body frame (including roll/pitch).
+        Confirmation suppresses brief force dropouts without delaying touchdown.
+        """
+        contact = self.contact_forces[:, self.raibert_foot_indices, 2] > self.cfg.rewards.raibert_contact_force_threshold
+        min_air_steps = self.cfg.rewards.raibert_min_air_steps
+        touchdown = (contact & (self.raibert_air_steps >= min_air_steps)
+                     & self.raibert_contact_initialized.unsqueeze(1))
+        self.raibert_air_steps = torch.where(contact, torch.zeros_like(self.raibert_air_steps),
+            (self.raibert_air_steps + 1).clamp(max=min_air_steps))
+        self.raibert_last_contacts = contact
+        self.raibert_contact_initialized.fill_(True)
+
+        command_active = (
+            (torch.abs(self.commands[:, 0]) > self.cfg.rewards.raibert_vx_command_threshold)
+            | (torch.abs(self.commands[:, 2]) > self.cfg.rewards.raibert_yaw_command_threshold)
+        )
+        touchdown &= command_active.unsqueeze(1)
+        desired_xy = self._get_raibert_desired_foot_xy()
 
         foot_world_relative = self.feet_pos[:, self.raibert_foot_order, :] - self.root_states[:, :3].unsqueeze(1)
         foot_body = quat_rotate_inverse(

@@ -208,6 +208,7 @@ class LeggedRobotCfg(BaseConfig):
         raibert_stance_length = 0.38  # [m]
         raibert_stance_width = 0.25  # [m]
         raibert_prediction_time = 0.25  # [s], fixed command preview horizon
+        raibert_min_air_steps = 1  # Consecutive low-force samples before touchdown.
         raibert_contact_force_threshold = 1.0  # [N], Fz > threshold means contact
         raibert_vx_command_threshold = 0.05  # [m/s]
         raibert_yaw_command_threshold = 0.05  # [rad/s]

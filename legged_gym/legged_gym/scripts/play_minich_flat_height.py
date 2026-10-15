@@ -107,11 +107,6 @@ def configure_flat_sequence_env(env_cfg):
     env_cfg.commands.ranges.ang_vel_yaw = [0.0, 0.0]
     env_cfg.control.action_scale = ACTION_SCALE
     env_cfg.asset.terminate_after_contacts_on = []
-    # 某些已安装/旧版本配置没有该字段；回放时显式补齐，确保与训练使用
-    # 的固定周期步态保持一致，同时避免直接访问属性时报 AttributeError。
-    env_cfg.rewards.raibert_gait_period_s = getattr(
-        env_cfg.rewards, "raibert_gait_period_s", 0.6
-    )
 
 
 def set_command(env, command):
@@ -349,56 +344,45 @@ def get_raibert_foot_body_xy(env):
     env.gym.refresh_actor_root_state_tensor(env.sim)
     env.gym.refresh_rigid_body_state_tensor(env.sim)
     foot_world_relative = (
-        env.feet_pos[:, env.raibert_foot_order, :]
+        env.rigid_body_states.view(env.num_envs, env.num_bodies, 13)[:, env.raibert_foot_indices, :3]
         - env.root_states[:, :3].unsqueeze(1)
     )
     foot_body = quat_rotate_inverse(
-        env.base_quat.repeat_interleave(4, dim=0),
+        env.root_states[:, 3:7].repeat_interleave(4, dim=0),
         foot_world_relative.reshape(-1, 3),
     ).view(env.num_envs, 4, 3)
     return foot_body[:, :, :2]
 
 
 def get_raibert_desired_foot_xy(env, command=None):
-    """按训练中的固定周期 Raibert 项计算名义足端目标。"""
-    half_length = 0.5 * env.cfg.rewards.raibert_stance_length
-    half_width = 0.5 * env.cfg.rewards.raibert_stance_width
-    x_nom = torch.tensor(
-        [half_length, half_length, -half_length, -half_length], device=env.device
-    )
-    y_nom = torch.tensor(
-        [half_width, -half_width, half_width, -half_width], device=env.device
-    )
-    return torch.stack((x_nom, y_nom), dim=-1)
+    """Reuse the training target, returning [env, FL/FR/RL/RR, XY]."""
+    commands = None
+    if command is not None:
+        commands = torch.as_tensor(command, device=env.device,
+                                   dtype=env.commands.dtype).reshape(1, -1).expand(env.num_envs, -1)
+    return env._get_raibert_desired_foot_xy(commands)
 
 
-def print_raibert_default_pose_comparison(env, default_foot_body_xy):
-    """输出当前阶段首条指令的 Raibert 目标与默认关节姿态足端的偏差。"""
-    command = scheduled_command(
-        int(round(STAND_BEFORE_S / env.dt)), env.dt
-    )
-    desired_foot_xy = get_raibert_desired_foot_xy(env)
-    errors = default_foot_body_xy - desired_foot_xy.unsqueeze(0)
+def print_raibert_pose_comparison(env):
+    """Compare the current synchronized pose to the next phase training target."""
+    command = scheduled_command(int(round(STAND_BEFORE_S / env.dt)), env.dt)
+    desired_foot_xy = get_raibert_desired_foot_xy(env, command)
+    errors = get_raibert_foot_body_xy(env) - desired_foot_xy
     squared_errors = torch.sum(torch.square(errors), dim=-1)
-    print("\nRaibert 落足点平均误差（STAND_BEFORE 结束；单位 m）：")
-    gait_period_s = getattr(env.cfg.rewards, "raibert_gait_period_s", 0.6)
+    print("\nRaibert 当前姿态到下一阶段目标的几何偏差（完整机身坐标系）：")
     print(
-        f"固定步态周期: {gait_period_s:.3f} s; "
+        f"预测时间参数: {env.cfg.rewards.raibert_prediction_time:.3f}s; "
         f"下一阶段指令: vx={command[0]:.3f} m/s, "
         f"vy={command[1]:.3f} m/s, wz={command[2]:.3f} rad/s"
     )
-    reward_scale = env.cfg.rewards.scales.raibert_heuristic
-    for policy_spec, foot_errors, foot_squared_errors in zip(
-        POLICY_SPECS,
-        errors.detach().cpu().tolist(),
-        squared_errors.detach().cpu().tolist(),
+    print("此处仅比较几何位置；实际奖励按去抖后的落地事件计算，见分阶段奖励汇总。")
+    for policy_spec, foot_squared_errors in zip(
+        POLICY_SPECS, squared_errors.detach().cpu().tolist()
     ):
-        mean_error = math.sqrt(sum(foot_squared_errors) / len(foot_squared_errors))
-        raw_penalty = sum(foot_squared_errors)
-        print(
-            f"{policy_spec[0]}: 平均误差={mean_error:.6f}, "
-            f"原始惩罚={raw_penalty:.6f}, 奖励贡献={reward_scale * raw_penalty:.6f}"
-        )
+        squared_sum = sum(foot_squared_errors)
+        rms_error = math.sqrt(squared_sum / len(foot_squared_errors))
+        print(f"{policy_spec[0]}: 四足位置RMSE={rms_error:.6f}m, "
+              f"平方误差和={squared_sum:.8f}m²")
 
 
 def load_policies(env, args, train_cfg):
@@ -434,7 +418,6 @@ def play(args):
     reset_to_fixed_state(env)
     aim_camera_at_latest_robot(env)
     run_default_pose_hold(env)
-    default_foot_body_xy = get_raibert_foot_body_xy(env).clone()
 
     policies = load_policies(env, args, train_cfg)
     obs = reset_to_fixed_state(env)
@@ -494,7 +477,7 @@ def play(args):
         # HIMLoco LeggedRobot 返回：obs、privileged_obs、reward、done、extras、termination_ids、termination_obs。
         obs, _, _, _, _, _, _ = env.step(actions.detach())
         if step + 1 == int(round(STAND_BEFORE_S / env.dt)):
-            print_raibert_default_pose_comparison(env, default_foot_body_xy)
+            print_raibert_pose_comparison(env)
         if height_interval_steps is not None and step % height_interval_steps == 0:
             height_lines = []
             for policy_spec, (world_height, ground_height, height_error) in zip(
