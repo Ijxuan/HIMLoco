@@ -82,8 +82,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             torque_limits = 0.0
             raibert_heuristic = -10.0
             hip_mirror = -1.0  # -(front + rear absolute mirror error), angles in rad.
+            hip_pos_penalty = -1.0  # Sum of squared excess hip deviations, rad^2.
 
         base_height_target = 0.26
+        hip_pos_deadband_deg = 3.0  # Relative to each hip's default standing angle.
         # Turn lifts: >=1 cm sole clearance, >=0.5 Hz per foot in a 4 s window.
         turn_lift_min_clearance = 0.01
         turn_lift_min_frequency = 0.5

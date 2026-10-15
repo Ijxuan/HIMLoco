@@ -1310,6 +1310,23 @@ class LeggedRobot(BaseTask):
         rear_error = torch.abs(self.dof_pos[:, 6] + self.dof_pos[:, 9])
         return (front_error + rear_error) * in_place_turn
 
+    def _reward_hip_pos_penalty(self):
+        """Squared hip deviation beyond the default-pose deadband during turns."""
+        in_place_turn = (
+            (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+            & (torch.abs(self.commands[:, 2]) >= 0.2)
+        )
+        # FL, FR, RL, RR ab/adduction joints, relative to their own defaults.
+        hip_indices = [0, 3, 6, 9]
+        deviation = torch.abs(
+            self.dof_pos[:, hip_indices] - self.default_dof_pos[:, hip_indices]
+        )
+        excess = torch.clamp(
+            deviation - self.cfg.rewards.hip_pos_deadband_deg * (np.pi / 180.0),
+            min=0.0,
+        )
+        return torch.sum(torch.square(excess), dim=1) * in_place_turn
+
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)

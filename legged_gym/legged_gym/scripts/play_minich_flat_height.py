@@ -37,10 +37,10 @@ ENV_SPACING_M = 1.0
 ACTION_SCALE = 0.25
 DEFAULT_POSE_HOLD_S = 0.0#关节锁定时间
 FORWARD_SPEED_M_S = 1.0#前进速度
-TURN_YAW_RATE_RAD_S = -0.25#旋转速度
+TURN_YAW_RATE_RAD_S = 0.25#旋转速度
 STAND_BEFORE_S = 3.0#前站立时间
 FORWARD_S = 0.0#前进时间
-TURN_S = 10.0#旋转时间
+TURN_S = 13.0#旋转时间
 STAND_AFTER_S = 6.0#后站立时间
 ENABLE_TERMINATION_RESET = False
 HEIGHT_PRINT_INTERVAL_S = 1.0
@@ -481,7 +481,10 @@ def play(args):
         phase = scheduled_phase(step, env.dt)
         reward_meter.set_phase(phase)
         set_command(env, scheduled_command(step, env.dt))
-        env.compute_observations()
+        # 历史仅由 env.step() 推进；此处只同步新指令，避免重复插入同一状态。
+        scaled_commands = env.commands[:, :3] * env.commands_scale
+        env.obs_buf[:, :3] = scaled_commands
+        env.privileged_obs_buf[:, :3] = scaled_commands
         obs = env.get_observations()
         # 每个 checkpoint 仅为与其索引相同的一台机器狗产生动作。
         actions = torch.cat(

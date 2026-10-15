@@ -185,10 +185,12 @@ class LeggedRobotCfg(BaseConfig):
             action_rate = -0.01
             stand_still = -0.
             hip_mirror = 0.0  # Pairwise hip mirror penalty; enabled for Mini Cheetah.
+            hip_pos_penalty = 0.0  # Turn-only hip default-pose deadband penalty.
             # Actual-touchdown, phase-free XY foothold penalty. Disabled by default.
             raibert_heuristic = 0.0
 
         log_phase_rewards = False  # Rollout reward rates grouped by actual commands.
+        hip_pos_deadband_deg = 3.0  # Allowed deviation from each default hip angle.
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized
