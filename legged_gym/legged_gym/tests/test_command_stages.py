@@ -255,7 +255,8 @@ class TestCommandStages(unittest.TestCase):
             # checked by test_phase_reward_logging rather than source equality.
             return {x.name: ast.dump(x) for x in cls.body if isinstance(x, ast.FunctionDef)
                     and x.name not in ('_reward_feet_air_time', '_reward_hip_mirror',
-                                       '_reward_hip_pos_penalty')
+                                       '_reward_hip_pos_penalty', '_reward_turn_lift_frequency',
+                                       '_reward_turn_air_time_overdue')
                     and (x.name.startswith('_reward_') or x.name == 'post_physics_step')}
         self.assertEqual(rewards(before), rewards(after))
 

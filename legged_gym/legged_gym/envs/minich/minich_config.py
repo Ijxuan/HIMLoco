@@ -72,7 +72,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
-            feet_air_time = 1.0
+            feet_air_time = 0.0  # Replaced by the two independent turn terms.
+            turn_lift_frequency = 0.25
+            turn_air_time_overdue = -1.0
             collision = 0.0
             termination = 0.0
             torques = 0.0
@@ -91,7 +93,6 @@ class MiniChRoughCfg(LeggedRobotCfg):
         turn_lift_min_frequency = 0.5
         turn_lift_window_s = 4.0
         turn_lift_foot_radius = 0.02
-        turn_lift_frequency_cost = 1.0
         # Retain continuous overdue-flight cost beyond 0.30 s.
         # Target/min remain the fallback formula for tasks without turn_lift settings.
         feet_air_time_target = 0.25

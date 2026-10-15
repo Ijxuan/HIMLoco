@@ -16,7 +16,7 @@ rollout 结束后写入以下 TensorBoard 分组，保留原 `Episode/*` 曲线�
 stand。turn 日志也包含低于 0.2 rad/s 的小转动指令；此时原有抬脚/髋部镜像奖励
 门控可能不生效。两者定义分别用于日志分类和奖励生效，日志不修改奖励门控。
 
-每组记录全部启用的奖励项，包括 `rew_feet_air_time`、`rew_tracking_ang_vel`、
+每组记录全部启用的奖励项，包括 `rew_turn_lift_frequency`、`rew_turn_air_time_overdue`、`rew_tracking_ang_vel`、
 `rew_tracking_lin_vel`、`rew_raibert_heuristic`、`rew_orientation`、
 `rew_base_height` 及启用时的 `rew_hip_mirror`。
 
@@ -28,7 +28,8 @@ stand。turn 日志也包含低于 0.2 rad/s 的小转动指令；此时原有�
 例如在 TensorBoard 查看：
 
 ```text
-PhaseReward/turn/rew_feet_air_time
+PhaseReward/turn/rew_turn_lift_frequency
+PhaseReward/turn/rew_turn_air_time_overdue
 PhaseReward/translate/rew_tracking_lin_vel
 PhaseReward/stand/rew_orientation
 PhaseReward/turn_positive/rew_tracking_ang_vel
@@ -54,3 +55,6 @@ PhaseReward/turn_negative/rew_tracking_ang_vel
 
 验证：`test_phase_reward_logging.py` 检查阶段转换、按样本归一化、正负转向、空组、
 统计清空和奖励计算透明性；GPU headless 两轮短训练验证 TensorBoard 实际写入。
+
+Mini Cheetah 已用持续频率与独立超时两项替代旧 feet_air_time；新训练不再生成该旧项。
+额外的 `TurnLift/*` 逐足状态日志和启动/稳态统计见 [最低抬脚奖励说明](minich_turn_lift_reward.md)。

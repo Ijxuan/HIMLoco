@@ -184,6 +184,8 @@ class LeggedRobotCfg(BaseConfig):
             feet_stumble = -0.0 
             action_rate = -0.01
             stand_still = -0.
+            turn_lift_frequency = 0.0
+            turn_air_time_overdue = 0.0
             hip_mirror = 0.0  # Pairwise hip mirror penalty; enabled for Mini Cheetah.
             hip_pos_penalty = 0.0  # Turn-only hip default-pose deadband penalty.
             # Actual-touchdown, phase-free XY foothold penalty. Disabled by default.
