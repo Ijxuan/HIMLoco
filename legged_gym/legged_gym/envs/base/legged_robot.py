@@ -1347,6 +1347,18 @@ class LeggedRobot(BaseTask):
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        if self.cfg.rewards.relative_tracking_lin_vel:
+            cfg = self.cfg.rewards
+            command_speed = torch.norm(self.commands[:, :2], dim=1)
+            speed_scale = command_speed.clamp(
+                min=cfg.tracking_lin_vel_min_speed, max=cfg.tracking_lin_vel_max_speed)
+            # One XY scale preserves lateral-error penalties even when vy_cmd is zero.
+            moving_reward = torch.exp(
+                -lin_vel_error / (cfg.tracking_lin_vel_sigma * speed_scale.square()))
+            standing_reward = torch.exp(-lin_vel_error / cfg.tracking_lin_vel_sigma)
+            return torch.where(
+                command_speed >= cfg.tracking_lin_vel_command_threshold,
+                moving_reward, standing_reward)
         return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)
     
     def _reward_tracking_ang_vel(self):

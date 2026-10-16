@@ -86,6 +86,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
             hip_mirror = 0.0
             hip_pos_penalty = 0.0
 
+        # Relative XY tracking during translation; keep the original near-zero branch.
+        relative_tracking_lin_vel = True
+        tracking_lin_vel_sigma = 0.25  # Independent of angular tracking_sigma.
+        tracking_lin_vel_min_speed = 0.3  # m/s; bound low-speed sensitivity.
+        tracking_lin_vel_max_speed = 1.0  # m/s; do not relax high-speed tracking.
+        tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
+
         base_height_target = 0.26
         hip_pos_deadband_deg = 3.0  # Relative to each hip's default standing angle.
         # Turn lifts: >=1 cm sole clearance, >=0.5 Hz per foot in a 4 s window.
