@@ -237,6 +237,8 @@ class LeggedRobot(BaseTask):
         # log additional curriculum info
         if self.cfg.terrain.curriculum:
             self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+            for name, mask in self.stair_terrain_masks.items():
+                self.extras["episode"]["terrain_level_" + name] = self.terrain_levels[mask].float().mean()
         if self.cfg.commands.curriculum:
             self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
         # send timeout info to the algorithm
@@ -1098,6 +1100,22 @@ class LeggedRobot(BaseTask):
             self.max_terrain_level = self.cfg.terrain.num_rows
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+            self.stair_terrain_masks = {}
+            if self.cfg.terrain.curriculum:
+                # Match Terrain.curiculum/make_terrain, including its sign convention:
+                # choices below proportions[2] generate negative-height (down) stairs.
+                choices = np.arange(self.cfg.terrain.num_cols) / self.cfg.terrain.num_cols + 0.001
+                proportions = self.terrain.proportions
+                stair_columns = (choices >= proportions[1]) & (choices < proportions[3])
+                for name, columns in (
+                    ("stairs", stair_columns),
+                    ("stairs_up", stair_columns & (choices >= proportions[2])),
+                    ("stairs_down", stair_columns & (choices < proportions[2])),
+                ):
+                    mask = torch.as_tensor(columns, device=self.device)[self.terrain_types]
+                    # Fixed masks across resets; omit absent types rather than log NaN.
+                    if mask.any().item():
+                        self.stair_terrain_masks[name] = mask
         else:
             self.custom_origins = False
             self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
