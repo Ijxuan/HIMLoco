@@ -35,9 +35,11 @@ POLICY_SPECS = (
 )
 ENV_SPACING_M = 1.0
 ACTION_SCALE = 0.25
+CALF_KP = 24.0
+CALF_KD = 0.8
 DEFAULT_POSE_HOLD_S = 0.0#关节锁定时间
 FORWARD_SPEED_M_S = 1.0#前进速度
-TURN_YAW_RATE_RAD_S = -0.25#旋转速度
+TURN_YAW_RATE_RAD_S = 0.5#旋转速度
 STAND_BEFORE_S = 3.0#前站立时间
 FORWARD_S = 0.0#前进时间
 TURN_S = 13.0#旋转时间
@@ -106,6 +108,11 @@ def configure_flat_sequence_env(env_cfg):
     env_cfg.commands.ranges.lin_vel_y = [0.0, 0.0]
     env_cfg.commands.ranges.ang_vel_yaw = [0.0, 0.0]
     env_cfg.control.action_scale = ACTION_SCALE
+    # 固定播放增益，避免训练增益随机化使三台机器狗使用不同的 PD。
+    env_cfg.control.stiffness = {**env_cfg.control.stiffness, "calf_joint": CALF_KP}
+    env_cfg.control.damping = {**env_cfg.control.damping, "calf_joint": CALF_KD}
+    env_cfg.domain_rand.randomize_kp = False
+    env_cfg.domain_rand.randomize_kd = False
     env_cfg.asset.terminate_after_contacts_on = []
 
 

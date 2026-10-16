@@ -30,6 +30,8 @@ STAIR_COUNT = 20
 ENV_SPACING_M = 1.0
 INITIAL_BASE_HEIGHT_M = flat.INITIAL_BASE_HEIGHT_M
 ACTION_SCALE = flat.ACTION_SCALE
+CALF_KP = 24.0
+CALF_KD = 0.8
 FORWARD_SPEED_M_S = 1.0
 STAND_BEFORE_S = 3.0
 FORWARD_S = 10.0
@@ -44,8 +46,7 @@ GROUND_BACK_M = 4.0
 TOP_LANDING_END_X_M = 15.0
 HEIGHT_SAMPLE_RESOLUTION_M = 0.02
 VERTICAL_RESOLUTION_M = 0.005
-CAMERA_OFFSET = np.array([-3.0, -3.0, 2.0])
-CAMERA_LOOKAHEAD = np.array([2.0, 0.0, 0.65])
+# 相机使用环境初始视角；播放中由用户手动调整并保持固定。
 
 
 def stair_height_at_x(x):
@@ -133,6 +134,9 @@ def configure_stair_env(cfg):
     cfg.env.episode_length_s = max(20., STAND_BEFORE_S + FORWARD_S + STAND_AFTER_S + 1.)
     cfg.init_state.pos[2] = INITIAL_BASE_HEIGHT_M
     cfg.control.action_scale = ACTION_SCALE
+    # 楼梯播放的小腿增益；增益随机化由平地播放配置关闭。
+    cfg.control.stiffness = {**cfg.control.stiffness, "calf_joint": CALF_KP}
+    cfg.control.damping = {**cfg.control.damping, "calf_joint": CALF_KD}
     cfg.terrain.mesh_type = "trimesh"
     cfg.terrain.curriculum = False
     cfg.terrain.horizontal_scale = HEIGHT_SAMPLE_RESOLUTION_M
@@ -149,13 +153,6 @@ def scheduled_phase(step, dt):
     if step < forward_end:
         return "forward"
     return "stand_after"
-
-
-def aim_camera(env):
-    if env.viewer is None:
-        return
-    position = env.root_states[-1, :3].detach().cpu().numpy()
-    env.set_camera(position + CAMERA_OFFSET, position + CAMERA_LOOKAHEAD)
 
 
 def load_policies(env, args, train_cfg):
@@ -207,7 +204,6 @@ def play(args):
         policies = load_policies(env, args, train_cfg)
         flat.reset_to_fixed_state(env)
         meter = flat.install_latest_policy_reward_meter(env)
-        aim_camera(env)
         steps = int(round((STAND_BEFORE_S + FORWARD_S + STAND_AFTER_S) / env.dt))
         height_interval = max(1, int(round(HEIGHT_PRINT_INTERVAL_S / env.dt))) if HEIGHT_PRINT_INTERVAL_S > 0 else None
         imu_interval = max(1, int(round(IMU_PRINT_INTERVAL_S / env.dt))) if IMU_PRINT_INTERVAL_S > 0 else None
@@ -235,7 +231,6 @@ def play(args):
                 values = [f"{spec[0]}: x={x:.3f}m, world_z={world:.3f}m, above_ground={ground:.3f}m, error={error:+.3f}m"
                           for spec, x, (world, ground, error) in zip(POLICY_SPECS, positions, heights)]
                 print(f"[台阶回放] t={(step+1)*env.dt:.2f}s, phase={phase}; " + " | ".join(values), flush=True)
-                aim_camera(env)
             if imu_interval is not None and step % imu_interval == 0:
                 angles = flat.get_base_imu_angles_deg(env)
                 print(f"[IMU] t={(step+1)*env.dt:.2f}s; " + " | ".join(

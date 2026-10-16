@@ -65,16 +65,16 @@ class MiniChRoughCfg(LeggedRobotCfg):
             tracking_ang_vel = 1.0
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
-            orientation = -1.2
+            orientation = -0.2  # Sep14 reward-scale baseline; current URDF retained.
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
-            feet_air_time = 0.0  # Replaced by the two independent turn terms.
-            turn_lift_frequency = 0.25
-            turn_air_time_overdue = -1.0
+            feet_air_time = 0.0
+            turn_lift_frequency = 0.0  # Disabled in the Sep14 scale baseline.
+            turn_air_time_overdue = 0.0
             collision = 0.0
             termination = 0.0
             torques = 0.0
@@ -83,8 +83,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_vel_limits = 0.0
             torque_limits = 0.0
             raibert_heuristic = -10.0
-            hip_mirror = -1.0  # -(front + rear absolute mirror error), angles in rad.
-            hip_pos_penalty = -1.0  # Sum of squared excess hip deviations, rad^2.
+            hip_mirror = 0.0
+            hip_pos_penalty = 0.0
 
         base_height_target = 0.26
         hip_pos_deadband_deg = 3.0  # Relative to each hip's default standing angle.
