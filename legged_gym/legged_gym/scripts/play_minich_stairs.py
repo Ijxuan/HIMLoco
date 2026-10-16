@@ -18,10 +18,15 @@ from legged_gym.envs.base.legged_robot import LeggedRobot
 from legged_gym.utils import get_args, task_registry
 
 # Same selection as the flat viewer. Each network controls one robot only.
+# POLICY_SPECS = (
+#     ("manual_1", "Sep11_10-19-10_smoke_minich", 1000),
+#     ("manual_2", -2, -1),
+#     ("latest", -1, -1),
+# )
 POLICY_SPECS = (
-    ("manual_1", "Sep11_10-19-10_smoke_minich", 1000),
+    ("manual_1", -2, -1),
     ("manual_2", -2, -1),
-    ("latest", -1, -1),
+    ("latest", -2, -1),
 )
 STAIR_START_X_M = 1.0
 STAIR_HEIGHT_M = 0.08
@@ -137,6 +142,12 @@ def configure_stair_env(cfg):
     # 楼梯播放的小腿增益；增益随机化由平地播放配置关闭。
     cfg.control.stiffness = {**cfg.control.stiffness, "calf_joint": CALF_KP}
     cfg.control.damping = {**cfg.control.damping, "calf_joint": CALF_KD}
+    # Compare policies with matching dynamics. The flat helper leaves these
+    # training randomizations enabled; independent delays/COMs change each dog.
+    cfg.domain_rand.randomize_com_displacement = False
+    cfg.domain_rand.randomize_motor_strength = False
+    cfg.domain_rand.randomize_initial_joint_pos = False
+    cfg.domain_rand.delay = False
     cfg.terrain.mesh_type = "trimesh"
     cfg.terrain.curriculum = False
     cfg.terrain.horizontal_scale = HEIGHT_SAMPLE_RESOLUTION_M
@@ -221,7 +232,10 @@ def play(args):
             meter.set_phase(phase)
             command = (FORWARD_SPEED_M_S, 0., 0.) if phase == "forward" else (0., 0., 0.)
             flat.set_command(env, command)
-            env.compute_observations()
+            # As in flat playback, only env.step() advances the history.
+            scaled_commands = env.commands[:, :3] * env.commands_scale
+            env.obs_buf[:, :3] = scaled_commands
+            env.privileged_obs_buf[:, :3] = scaled_commands
             obs = env.get_observations()
             actions = torch.cat([policy(obs[i:i+1].detach()) for i, policy in enumerate(policies)])
             env.step(actions.detach())
