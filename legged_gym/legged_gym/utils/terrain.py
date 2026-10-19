@@ -49,6 +49,14 @@ class Terrain:
 
         self.cfg.num_sub_terrains = cfg.num_rows * cfg.num_cols
         self.env_origins = np.zeros((cfg.num_rows, cfg.num_cols, 3))
+        self.long_stair_columns = 0
+        if cfg.curriculum and getattr(cfg, "long_stairs_enabled", False):
+            if not 0 < cfg.long_stairs_fraction < 1:
+                raise ValueError("long_stairs_fraction must be between 0 and 1")
+            self.long_stair_columns = max(1, int(round(cfg.num_cols * cfg.long_stairs_fraction)))
+            if self.long_stair_columns >= cfg.num_cols:
+                raise ValueError("Long stairs require at least one ordinary terrain column")
+
 
         self.width_per_env_pixels = int(self.env_width / cfg.horizontal_scale)
         self.length_per_env_pixels = int(self.env_length / cfg.horizontal_scale)
@@ -86,9 +94,17 @@ class Terrain:
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
                 difficulty = i / self.cfg.num_rows
-                choice = j / self.cfg.num_cols + 0.001
-
-                terrain = self.make_terrain(choice, difficulty)
+                ordinary_cols = self.cfg.num_cols - self.long_stair_columns
+                choice = j / ordinary_cols + 0.001
+                if j >= ordinary_cols:
+                    terrain = terrain_utils.SubTerrain("long_stairs", width=self.length_per_env_pixels,
+                        length=self.width_per_env_pixels, vertical_scale=self.cfg.vertical_scale,
+                        horizontal_scale=self.cfg.horizontal_scale)
+                    if i >= self.cfg.long_stairs_start_level:
+                        long_tread_stairs(terrain, self.cfg.long_stairs_height,
+                                          self.cfg.long_stairs_depth, self.cfg.long_stairs_count)
+                else:
+                    terrain = self.make_terrain(choice, difficulty)
                 self.add_terrain_to_map(terrain, i, j)
 
     def selected_terrain(self):
@@ -186,3 +202,23 @@ def pit_terrain(terrain, depth, platform_size=1.):
     y1 = terrain.width // 2 - platform_size
     y2 = terrain.width // 2 + platform_size
     terrain.height_field_raw[x1:x2, y1:y2] = -depth
+
+
+def long_tread_stairs(terrain, step_height=0.08, step_depth=1.2, count=2):
+    """Central flat approach with symmetric +/-X ascending long treads.
+
+    Round grid dimensions explicitly: int(1.2 / .1) would lose one cell.
+    Each outer landing must retain at least one full tread before the tile edge.
+    """
+    rise = int(round(step_height / terrain.vertical_scale))
+    depth = int(round(step_depth / terrain.horizontal_scale))
+    if rise <= 0 or depth <= 0 or count < 1 or int(count) != count:
+        raise ValueError("Invalid long stair dimensions/count")
+    if not np.isclose(rise * terrain.vertical_scale, step_height) or not np.isclose(depth * terrain.horizontal_scale, step_depth):
+        raise ValueError("Long stair dimensions must be representable on the height grid")
+    center = terrain.height_field_raw.shape[0] // 2
+    if min(center, terrain.height_field_raw.shape[0] - center) < (count + 1) * depth:
+        raise ValueError("Terrain too short for long stairs and full outer landings")
+    offset = np.abs(np.arange(terrain.height_field_raw.shape[0]) - center)
+    levels = np.minimum(offset // depth, count)
+    terrain.height_field_raw[:] = (levels * rise).astype(np.int16)[:, None]

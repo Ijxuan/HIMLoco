@@ -152,6 +152,9 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "step_retraction"):
             self.step_retraction.update(self.feet_pos, self.contact_forces[:, self.feet_indices], self.step_clearance)
 
+        if hasattr(self, "long_stair_success"):
+            self._update_long_stair_success()
+
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
@@ -191,6 +194,11 @@ class LeggedRobot(BaseTask):
         """
         if len(env_ids) == 0:
             return
+        long_stair_rate = None
+        if hasattr(self, "long_stair_success"):
+            selected = env_ids[self.long_stair_mask[env_ids] & (self.terrain_levels[env_ids] >= self.cfg.terrain.long_stairs_start_level)]
+            if len(selected):
+                long_stair_rate = self.long_stair_success[selected].float().mean()
         # update curriculum
         if self.cfg.terrain.curriculum:
             self._update_terrain_curriculum(env_ids)
@@ -216,6 +224,9 @@ class LeggedRobot(BaseTask):
             self.step_clearance.reset(env_ids)
         if hasattr(self, "step_retraction"):
             self.step_retraction.reset(env_ids)
+        if hasattr(self, "long_stair_success"):
+            self.long_stair_success[env_ids] = False
+            self.long_stair_hold[env_ids] = 0.
         self.actions[env_ids] = 0.
         self.disturbance[env_ids] = 0.
         self.obs_history_reset_pending[env_ids] = True
@@ -250,6 +261,8 @@ class LeggedRobot(BaseTask):
         
         # fill extras
         self.extras["episode"] = {}
+        if long_stair_rate is not None:
+            self.extras["episode"]["long_stairs_success"] = long_stair_rate
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids] / torch.clip(self.episode_length_buf[env_ids], min=1) / self.dt)
             self.episode_sums[key][env_ids] = 0.
@@ -698,6 +711,12 @@ class LeggedRobot(BaseTask):
         else:
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
+        if hasattr(self, "long_stair_mask"):
+            ids = env_ids[self.long_stair_mask[env_ids]]
+            if len(ids):
+                self.root_states[ids, :2] = self.env_origins[ids, :2] + self.base_init_state[:2] + torch_rand_float(
+                    -self.cfg.terrain.long_stairs_spawn_range, self.cfg.terrain.long_stairs_spawn_range,
+                    (len(ids), 2), device=self.device)
         # base velocities
         self.root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
         env_ids_int32 = env_ids.to(dtype=torch.int32)
@@ -718,6 +737,21 @@ class LeggedRobot(BaseTask):
         disturbance = torch_rand_float(self.cfg.domain_rand.disturbance_range[0], self.cfg.domain_rand.disturbance_range[1], (self.num_envs, 3), device=self.device)
         self.disturbance[:, 0, :] = disturbance
         self.gym.apply_rigid_body_force_tensors(self.sim, forceTensor=gymtorch.unwrap_tensor(self.disturbance), space=gymapi.CoordinateSpace.LOCAL_SPACE)
+
+    def _update_long_stair_success(self):
+        """Require all feet on one outer landing, upright and supported for 0.2 s."""
+        cfg = self.cfg.terrain
+        enabled = self.long_stair_mask & (self.terrain_levels >= cfg.long_stairs_start_level)
+        local = self.feet_pos - self.env_origins[:, None, :]
+        radius = self.cfg.rewards.step_clearance_foot_radius
+        threshold = cfg.long_stairs_count * cfg.long_stairs_depth + radius + cfg.horizontal_scale
+        same_landing = (local[..., 0] >= threshold).all(1) | (local[..., 0] <= -threshold).all(1)
+        inside = (local[..., 0].abs() < cfg.terrain_length / 2 - radius).all(1) & (local[..., 1].abs() < cfg.terrain_width / 2 - radius).all(1)
+        high = (local[..., 2] >= cfg.long_stairs_count * cfg.long_stairs_height + radius - .02).all(1)
+        supported = (self.contact_forces[:, self.feet_indices, 2] > 1.).sum(1) >= 2
+        valid = enabled & same_landing & inside & high & supported & (self.projected_gravity[:, 2] < -.7)
+        self.long_stair_hold[:] = torch.where(valid, self.long_stair_hold + self.dt, torch.zeros_like(self.long_stair_hold))
+        self.long_stair_success |= self.long_stair_hold >= cfg.long_stairs_success_hold_s
 
     def _update_terrain_curriculum(self, env_ids):
         """ Implements the game-inspired curriculum.
@@ -745,6 +779,14 @@ class LeggedRobot(BaseTask):
         move_up = torch.where(in_place_turn, torch.zeros_like(move_up), move_up)
         move_down = torch.where(in_place_turn, fell, move_down)
 
+        if hasattr(self, "long_stair_success"):
+            special = self.long_stair_mask[env_ids] & (self.terrain_levels[env_ids] >= self.cfg.terrain.long_stairs_start_level)
+            success = self.long_stair_success[env_ids] & ~fell
+            move_up = torch.where(special, success, move_up)
+            # Failure to climb under a translating command demotes; standing and
+            # turning timeouts hold the level, while falls always demote.
+            failed = fell | ((torch.norm(self.commands[env_ids, :2], dim=1) >= .1) & ~success)
+            move_down = torch.where(special, failed, move_down)
         self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one
         self.terrain_levels[env_ids] = torch.where(self.terrain_levels[env_ids]>=self.max_terrain_level,
@@ -1132,13 +1174,20 @@ class LeggedRobot(BaseTask):
             if self.cfg.terrain.curriculum:
                 # Match Terrain.curiculum/make_terrain, including its sign convention:
                 # choices below proportions[2] generate negative-height (down) stairs.
-                choices = np.arange(self.cfg.terrain.num_cols) / self.cfg.terrain.num_cols + 0.001
+                ordinary_cols = self.cfg.terrain.num_cols - getattr(self.terrain, "long_stair_columns", 0)
+                choices = np.arange(self.cfg.terrain.num_cols) / ordinary_cols + 0.001
+                long_columns = np.arange(self.cfg.terrain.num_cols) >= ordinary_cols
+                if long_columns.any():
+                    self.long_stair_mask = torch.as_tensor(long_columns, device=self.device)[self.terrain_types]
+                    self.long_stair_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+                    self.long_stair_hold = torch.zeros(self.num_envs, device=self.device)
                 proportions = self.terrain.proportions
                 stair_columns = (choices >= proportions[1]) & (choices < proportions[3])
                 for name, columns in (
                     ("stairs", stair_columns),
                     ("stairs_up", stair_columns & (choices >= proportions[2])),
                     ("stairs_down", stair_columns & (choices < proportions[2])),
+                    ("long_stairs", long_columns),
                 ):
                     mask = torch.as_tensor(columns, device=self.device)[self.terrain_types]
                     # Fixed masks across resets; omit absent types rather than log NaN.

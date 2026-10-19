@@ -13,6 +13,16 @@ class MiniChRoughCfg(LeggedRobotCfg):
         num_actions = 12
         episode_length_s = 20
 
+    class terrain(LeggedRobotCfg.terrain):
+        long_stairs_enabled = True
+        long_stairs_fraction = 0.15  # 3 of the default 20 curriculum columns.
+        long_stairs_start_level = 2  # Zero-based; rows 0 and 1 remain flat.
+        long_stairs_height = 0.08
+        long_stairs_depth = 1.20
+        long_stairs_count = 2
+        long_stairs_spawn_range = 0.25
+        long_stairs_success_hold_s = 0.20
+
     class commands(LeggedRobotCfg.commands):
         in_place_turn_probability = 0.1
         in_place_turn_min_yaw_rate = 0.2
