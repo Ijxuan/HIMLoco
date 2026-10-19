@@ -46,6 +46,7 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.step_clearance import StepClearance
+from legged_gym.utils.step_retraction import StepRetraction
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
@@ -148,6 +149,8 @@ class LeggedRobot(BaseTask):
             command_world = quat_apply_yaw(self.base_quat, command)[:, :2]
             self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
                                        command_world, self._sample_step_heights)
+        if hasattr(self, "step_retraction"):
+            self.step_retraction.update(self.feet_pos, self.contact_forces[:, self.feet_indices], self.step_clearance)
 
         # compute observations, rewards, resets, ...
         self.check_termination()
@@ -211,6 +214,8 @@ class LeggedRobot(BaseTask):
             self.orientation_target_normal[env_ids] = -self.gravity_vec[env_ids]
         if hasattr(self, "step_clearance"):
             self.step_clearance.reset(env_ids)
+        if hasattr(self, "step_retraction"):
+            self.step_retraction.reset(env_ids)
         self.actions[env_ids] = 0.
         self.disturbance[env_ids] = 0.
         self.obs_history_reset_pending[env_ids] = True
@@ -858,10 +863,13 @@ class LeggedRobot(BaseTask):
         self.measured_heights = self._get_heights()
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._init_orientation_reference()
-        if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0.:
+        retraction_enabled = any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("step_retraction", "step_retraction_stall"))
+        if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0. or retraction_enabled:
             if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
                 raise ValueError("step_clearance requires terrain heights")
             self.step_clearance = StepClearance(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards)
+        if retraction_enabled:
+            self.step_retraction = StepRetraction(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards, self.dt)
         self.base_height_points = self._init_base_height_points()
 
         # joint positions offsets and PD gains
@@ -1510,6 +1518,12 @@ class LeggedRobot(BaseTask):
         # approach direction. Custom playback meshes retain their own grid.
         edge_height = torch.minimum(torch.minimum(h00, h10), torch.minimum(h01, h11)) if isinstance(self.terrain, Terrain) else h00
         return torch.where(steep, edge_height, smooth)
+
+    def _reward_step_retraction(self):
+        return self.step_retraction.progress_reward
+
+    def _reward_step_retraction_stall(self):
+        return self.step_retraction.stall_cost
 
     def _reward_step_clearance(self):
         # Updated once per control step; reward queries are side-effect free.
