@@ -79,7 +79,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
-            step_retraction = 0.05  # Total credit <= 0.05 per foot/latched edge.
+            step_retraction = 0.05  # Total credit <= 0.05 per foot/swing.
             step_retraction_stall = -0.20
             step_clearance = -0.25  # Bounded per-foot deficit; initial training weight.
             foot_clearance = 0
@@ -106,13 +106,18 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_max_speed = 1.0  # m/s; do not relax high-speed tracking.
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
 
-        # Privileged stair-edge reward; actor/export inputs stay unchanged.
+        # Training-only swing/edge rewards; actor/export inputs stay unchanged.
+        # Every straight forward/backward swing: world-frame 3 cm retraction.
         step_retraction_distance = 0.03
-        step_retraction_trigger_distance = 0.05
-        step_retraction_force = 5.0
-        step_retraction_confirm_time = 0.04
+        step_retraction_reference_time = 0.30
         step_retraction_timeout = 0.40
-        step_retraction_progress_epsilon = 0.0002
+        step_retraction_min_forward_speed = 0.10
+        step_retraction_max_yaw_rate = 0.05
+        step_retraction_stance_confirm_time = 0.06
+        step_retraction_swing_confirm_time = 0.04
+        step_retraction_landing_confirm_time = 0.04
+        step_retraction_contact_force = 1.0
+        step_retraction_landing_penalty_time = 0.30
         step_clearance_lookahead = 0.15
         step_clearance_sample_spacing = 0.01
         step_clearance_margin = 0.03

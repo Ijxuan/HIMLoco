@@ -144,13 +144,21 @@ class LeggedRobot(BaseTask):
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._update_orientation_reference()
 
-        if hasattr(self, "step_clearance"):
+        if hasattr(self, "step_clearance") or hasattr(self, "step_retraction"):
             command = torch.cat((self.commands[:, :2], torch.zeros_like(self.commands[:, :1])), dim=1)
             command_world = quat_apply_yaw(self.base_quat, command)[:, :2]
+        if hasattr(self, "step_clearance"):
             self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
                                        command_world, self._sample_step_heights)
         if hasattr(self, "step_retraction"):
-            self.step_retraction.update(self.feet_pos, self.contact_forces[:, self.feet_indices], self.step_clearance)
+            sole = self.feet_pos[..., 2] - self.cfg.rewards.step_clearance_foot_radius
+            ground = self._sample_step_heights(self.feet_pos[..., :2])
+            support = ((sole - ground).abs() <= self.cfg.rewards.step_clearance_support_tolerance) & (
+                self.contact_forces[:, self.feet_indices, 2] > self.cfg.rewards.step_retraction_contact_force)
+            self.step_retraction.update(self.feet_pos, self.commands, command_world, support)
+            if hasattr(self, "step_clearance"):
+                self.step_clearance.per_foot_cost.masked_fill_(self.step_retraction.stage == StepRetraction.RETRACT, 0.)
+                self.step_clearance.cost[:] = self.step_clearance.per_foot_cost.sum(-1)
 
         if hasattr(self, "long_stair_success"):
             self._update_long_stair_success()
@@ -906,11 +914,13 @@ class LeggedRobot(BaseTask):
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._init_orientation_reference()
         retraction_enabled = any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("step_retraction", "step_retraction_stall"))
-        if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0. or retraction_enabled:
+        if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0.:
             if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
                 raise ValueError("step_clearance requires terrain heights")
             self.step_clearance = StepClearance(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards)
         if retraction_enabled:
+            if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
+                raise ValueError("step_retraction requires support-height sampling")
             self.step_retraction = StepRetraction(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards, self.dt)
         self.base_height_points = self._init_base_height_points()
 
