@@ -69,6 +69,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
+            step_clearance = -0.25  # Bounded per-foot deficit; initial training weight.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -92,6 +93,16 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_min_speed = 0.3  # m/s; bound low-speed sensitivity.
         tracking_lin_vel_max_speed = 1.0  # m/s; do not relax high-speed tracking.
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
+
+        # Privileged stair-edge reward; actor/export inputs stay unchanged.
+        step_clearance_lookahead = 0.15
+        step_clearance_sample_spacing = 0.01
+        step_clearance_margin = 0.03
+        step_clearance_foot_radius = 0.02  # URDF foot collision sphere.
+        step_clearance_min_rise = 0.035
+        step_clearance_support_tolerance = 0.012
+        step_clearance_release_distance = 0.03
+        step_clearance_min_speed = 0.10
 
         terrain_relative_orientation = True
         orientation_window_half_length = 0.4  # 0.8 m fore/aft fitting window.

@@ -25,7 +25,7 @@ from legged_gym.utils import get_args, task_registry
 # )
 POLICY_SPECS = (
     ("manual_1", -1, -1),
-    ("manual_2", -2, -1),
+    ("manual_2", -1, -1),
     ("latest", -1, -1),
 )
 STAIR_START_X_M = 1.0
@@ -37,7 +37,7 @@ INITIAL_BASE_HEIGHT_M = flat.INITIAL_BASE_HEIGHT_M
 ACTION_SCALE = flat.ACTION_SCALE
 CALF_KP = 24.0
 CALF_KD = 0.8
-FORWARD_SPEED_M_S = 0.5
+FORWARD_SPEED_M_S = 0.5#速度应该是
 STAND_BEFORE_S = 3.0
 FORWARD_S = 10.0
 STAND_AFTER_S = 6.0

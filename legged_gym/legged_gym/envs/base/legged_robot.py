@@ -45,6 +45,7 @@ from typing import Tuple, Dict
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
 from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.step_clearance import StepClearance
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
@@ -142,6 +143,12 @@ class LeggedRobot(BaseTask):
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._update_orientation_reference()
 
+        if hasattr(self, "step_clearance"):
+            command = torch.cat((self.commands[:, :2], torch.zeros_like(self.commands[:, :1])), dim=1)
+            command_world = quat_apply_yaw(self.base_quat, command)[:, :2]
+            self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
+                                       command_world, self._sample_step_heights)
+
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
@@ -202,6 +209,8 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "orientation_reference_initialized"):
             self.orientation_reference_initialized[env_ids] = False
             self.orientation_target_normal[env_ids] = -self.gravity_vec[env_ids]
+        if hasattr(self, "step_clearance"):
+            self.step_clearance.reset(env_ids)
         self.actions[env_ids] = 0.
         self.disturbance[env_ids] = 0.
         self.obs_history_reset_pending[env_ids] = True
@@ -849,6 +858,10 @@ class LeggedRobot(BaseTask):
         self.measured_heights = self._get_heights()
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._init_orientation_reference()
+        if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0.:
+            if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
+                raise ValueError("step_clearance requires terrain heights")
+            self.step_clearance = StepClearance(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards)
         self.base_height_points = self._init_base_height_points()
 
         # joint positions offsets and PD gains
@@ -1473,6 +1486,35 @@ class LeggedRobot(BaseTask):
         base_height = self._get_base_heights()
         return torch.square(base_height - self.cfg.rewards.base_height_target)
     
+    def _sample_step_heights(self, xy):
+        """Unsmoothed privileged heights; grid resolution limits edge accuracy."""
+        if self.cfg.terrain.mesh_type == "plane":
+            return torch.zeros(xy.shape[:-1], device=self.device)
+        cfg = self.terrain.cfg
+        grid = (xy + cfg.border_size) / cfg.horizontal_scale
+        indices = torch.floor(grid).long()
+        x = indices[..., 0].clamp(0, self.height_samples.shape[0] - 2)
+        y = indices[..., 1].clamp(0, self.height_samples.shape[1] - 2)
+        h00 = self.height_samples[x, y] * cfg.vertical_scale
+        h10 = self.height_samples[x + 1, y] * cfg.vertical_scale
+        h01 = self.height_samples[x, y + 1] * cfg.vertical_scale
+        h11 = self.height_samples[x + 1, y + 1] * cfg.vertical_scale
+        fraction = (grid - indices).clamp(0, 1)
+        u, v = fraction.unbind(-1)
+        smooth = (1-u)*(1-v)*h00 + u*(1-v)*h10 + (1-u)*v*h01 + u*v*h11
+        variation = torch.stack((h10-h00, h01-h00, h11-h10, h11-h01), -1).abs().amax(-1)
+        # Smooth ramps should not appear as a sequence of discrete risers.
+        steep = variation > cfg.slope_treshold * cfg.horizontal_scale
+        # Standard Terrain moves the LOW vertex to the high vertex to make
+        # vertical risers. The lower height fills the steep cell on either
+        # approach direction. Custom playback meshes retain their own grid.
+        edge_height = torch.minimum(torch.minimum(h00, h10), torch.minimum(h01, h11)) if isinstance(self.terrain, Terrain) else h00
+        return torch.where(steep, edge_height, smooth)
+
+    def _reward_step_clearance(self):
+        # Updated once per control step; reward queries are side-effect free.
+        return self.step_clearance.cost
+
     def _reward_foot_clearance(self):
         cur_footpos_translated = self.feet_pos - self.root_states[:, 0:3].unsqueeze(1)
         footpos_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
