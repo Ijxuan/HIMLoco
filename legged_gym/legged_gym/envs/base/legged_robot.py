@@ -139,6 +139,8 @@ class LeggedRobot(BaseTask):
         self.feet_vel = self.rigid_body_states.view(self.num_envs, self.num_bodies, 13)[:, self.feet_indices, 7:10]
 
         self._post_physics_step_callback()
+        if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
+            self._update_orientation_reference()
 
         # compute observations, rewards, resets, ...
         self.check_termination()
@@ -197,6 +199,9 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.root_states[env_ids, 7:10])
         self.base_ang_vel[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.root_states[env_ids, 10:13])
         self.projected_gravity[env_ids] = quat_rotate_inverse(self.base_quat[env_ids], self.gravity_vec[env_ids])
+        if hasattr(self, "orientation_reference_initialized"):
+            self.orientation_reference_initialized[env_ids] = False
+            self.orientation_target_normal[env_ids] = -self.gravity_vec[env_ids]
         self.actions[env_ids] = 0.
         self.disturbance[env_ids] = 0.
         self.obs_history_reset_pending[env_ids] = True
@@ -842,6 +847,8 @@ class LeggedRobot(BaseTask):
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
         self.measured_heights = self._get_heights()
+        if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
+            self._init_orientation_reference()
         self.base_height_points = self._init_base_height_points()
 
         # joint positions offsets and PD gains
@@ -1392,9 +1399,66 @@ class LeggedRobot(BaseTask):
         # Penalize xy axes base angular velocity
         return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
     
+    def _init_orientation_reference(self):
+        """Precompute a weighted plane fit in a yaw-aligned, level sampling frame."""
+        cfg = self.cfg.rewards
+        if not self.cfg.terrain.measure_heights:
+            raise ValueError("Terrain-relative orientation requires measure_heights=True")
+        length, width = cfg.orientation_window_half_length, cfg.orientation_window_half_width
+        values = [length, width, cfg.orientation_filter_tau,
+                  cfg.orientation_deadband_deg, cfg.orientation_max_tilt_deg]
+        if (not all(math.isfinite(v) for v in values) or min(length, width) <= 0
+                or cfg.orientation_filter_tau < 0
+                or not 0 <= cfg.orientation_deadband_deg < cfg.orientation_max_tilt_deg < 90):
+            raise ValueError("Invalid terrain-relative orientation settings")
+        xy = self.height_points[0, :, :2]
+        mask = (xy[:, 0].abs() <= length + 1e-6) & (xy[:, 1].abs() <= width + 1e-6)
+        self.orientation_height_indices = mask.nonzero(as_tuple=False).flatten()
+        xy = xy[mask]
+        design = torch.cat((xy, torch.ones_like(xy[:, :1])), dim=1)
+        if len(xy) < 3 or torch.linalg.matrix_rank(design).item() < 3:
+            raise ValueError("Orientation window needs non-collinear height samples")
+        weight = torch.exp(-0.5 * ((xy[:, 0] / length)**2 + (xy[:, 1] / width)**2))
+        weighted_transpose = design.T * weight
+        self.orientation_plane_fit = torch.linalg.solve(
+            weighted_transpose @ design, weighted_transpose)
+        self.orientation_target_normal = -self.gravity_vec.clone()
+        self.orientation_reference_initialized = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device)
+
+    def _update_orientation_reference(self):
+        """Update once after fresh terrain sampling, never from a reward/obs query.
+
+        Fit z=a*x+b*y+c around the nominal support region, not moving feet.
+        Fully follow the fitted plane (alpha=1); smooth normals in WORLD frame
+        so a yaw turn cannot rotate a stale local-frame reference incorrectly.
+        """
+        heights = self.measured_heights[:, self.orientation_height_indices]
+        # Center heights for numerical stability at high world elevations.
+        heights = heights - heights.mean(dim=1, keepdim=True)
+        slopes = (heights @ self.orientation_plane_fit.T)[:, :2]
+        limit = math.tan(math.radians(self.cfg.rewards.orientation_max_tilt_deg))
+        slopes = slopes * (limit / slopes.norm(dim=1, keepdim=True).clamp_min(1e-8)).clamp(max=1.)
+        local_normal = torch.cat((-slopes, torch.ones_like(slopes[:, :1])), dim=1)
+        local_normal = torch.nn.functional.normalize(local_normal, dim=1)
+        raw_normal = quat_apply_yaw(self.base_quat, local_normal)
+        tau = self.cfg.rewards.orientation_filter_tau
+        gain = 1. if tau == 0 else -math.expm1(-self.dt / tau)
+        filtered = torch.nn.functional.normalize(
+            self.orientation_target_normal + gain * (raw_normal - self.orientation_target_normal), dim=1)
+        self.orientation_target_normal[:] = torch.where(
+            self.orientation_reference_initialized[:, None], filtered, raw_normal)
+        self.orientation_reference_initialized[:] = True
+
     def _reward_orientation(self):
-        # Penalize non flat base orientation
-        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+        if not getattr(self.cfg.rewards, "terrain_relative_orientation", False):
+            return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+        # Body Z dot target normal. atan2 handles both aligned and upside-down
+        # states without the near-zero sensitivity of acos.
+        target_body = quat_rotate_inverse(self.base_quat, self.orientation_target_normal)
+        angle = torch.atan2(target_body[:, :2].norm(dim=1), target_body[:, 2])
+        excess = (angle - math.radians(self.cfg.rewards.orientation_deadband_deg)).clamp_min(0.)
+        return excess.square()
     
     def _reward_dof_acc(self):
         # Penalize dof accelerations

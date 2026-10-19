@@ -24,9 +24,9 @@ from legged_gym.utils import get_args, task_registry
 #     ("latest", -1, -1),
 # )
 POLICY_SPECS = (
-    ("manual_1", -2, -1),
+    ("manual_1", -1, -1),
     ("manual_2", -2, -1),
-    ("latest", -2, -1),
+    ("latest", -1, -1),
 )
 STAIR_START_X_M = 1.0
 STAIR_HEIGHT_M = 0.08

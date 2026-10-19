@@ -19,7 +19,6 @@ class HIMEstimator(nn.Module):
                  max_grad_norm=10.0,
                  num_prototype=32,
                  temperature=0.01,
-                 temperature=0.01,
                  **kwargs):
         if kwargs:
             print("Estimator_CL.__init__ got unexpected arguments, which will be ignored: " + str(

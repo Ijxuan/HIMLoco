@@ -65,7 +65,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             tracking_ang_vel = 1.0
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
-            orientation = -1.2  # Sep14 reward-scale baseline; current URDF retained.
+            orientation = -1.2  # Terrain-relative angular cost; retune after training.
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
@@ -92,6 +92,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_min_speed = 0.3  # m/s; bound low-speed sensitivity.
         tracking_lin_vel_max_speed = 1.0  # m/s; do not relax high-speed tracking.
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
+
+        terrain_relative_orientation = True
+        orientation_window_half_length = 0.4  # 0.8 m fore/aft fitting window.
+        orientation_window_half_width = 0.2   # 0.4 m lateral fitting window.
+        orientation_deadband_deg = 5.0
+        orientation_filter_tau = 0.15        # World-frame normal low-pass, seconds.
+        orientation_max_tilt_deg = 35.0      # Reference cap, not a termination gate.
 
         base_height_target = 0.26
         hip_pos_deadband_deg = 3.0  # Relative to each hip's default standing angle.
