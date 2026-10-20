@@ -83,9 +83,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
             joint_power = -2e-5
             base_height = -30.0
             step_retraction = 0.0  # Penalty-only band; no positive swing credit.
-            step_retraction_stall = -0.20
+            step_retraction_stall = -4.0
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
-            swing_peak_height = 0.02  # Per foot/swing, only the gait-training group.
+            swing_peak_height = 2.0  # Per foot/swing, only the gait-training group.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
