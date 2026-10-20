@@ -24,6 +24,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
         long_stairs_success_hold_s = 0.20
 
     class commands(LeggedRobotCfg.commands):
+        curriculum = False  # Former high-speed group now learns low-speed gait.
+        gait_training_fraction = 0.20
+        gait_training_speed_range = [0.20, 0.50]  # Magnitude; equal forward/backward sampling.
         in_place_turn_probability = 0.1
         in_place_turn_min_yaw_rate = 0.2
         in_place_turn_duration_s = 10.0
@@ -79,9 +82,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
-            step_retraction = 0.05  # Total credit <= 0.05 per foot/swing.
+            step_retraction = 0.0  # Penalty-only band; no positive swing credit.
             step_retraction_stall = -0.20
-            step_clearance = -0.25  # Bounded per-foot deficit; initial training weight.
+            step_clearance = 0  # Bounded per-foot deficit; initial training weight.
+            swing_peak_height = 0.02  # Per foot/swing, only the gait-training group.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -107,8 +111,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
 
         # Training-only swing/edge rewards; actor/export inputs stay unchanged.
-        # Every straight forward/backward swing: world-frame 3 cm retraction.
-        step_retraction_distance = 0.03
+        # Straight swings: 1.5--3 cm; subtract cumulative reverse body travel.
+        step_retraction_distance = 0.015  # Minimum effective retraction.
+        step_retraction_max_distance = 0.03  # Maximum WORLD retraction.
         step_retraction_reference_time = 0.30
         step_retraction_timeout = 0.40
         step_retraction_min_forward_speed = 0.10
@@ -126,6 +131,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
         step_clearance_support_tolerance = 0.012
         step_clearance_release_distance = 0.03
         step_clearance_min_speed = 0.10
+
+        swing_peak_height_min = 0.05
+        swing_peak_height_max = 0.08
+        swing_peak_height_min_air_time = 0.08
+        swing_peak_height_timeout = 0.50
+        swing_peak_height_stance_time = 0.06
+        swing_peak_height_landing_time = 0.04
 
         terrain_relative_orientation = True
         orientation_window_half_length = 0.4  # 0.8 m fore/aft fitting window.

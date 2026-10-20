@@ -39,6 +39,7 @@ import torch
 from rsl_rl.algorithms import PPO, HIMPPO
 from rsl_rl.modules import HIMActorCritic
 from rsl_rl.env import VecEnv
+from rsl_rl.utils.gait_metrics import summarize_gait_episode_metrics
 
 
 class HIMOnPolicyRunner:
@@ -177,7 +178,10 @@ class HIMOnPolicyRunner:
                 # Missing metrics are absent observations, not zero successes.
                 value = infotensor.mean()
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
-                ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+                if not key.startswith(("gait_height/", "gait_retraction/", "retraction_other/")):
+                    ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+        for key, value in summarize_gait_episode_metrics(locs["ep_infos"]).items():
+            self.writer.add_scalar(key, value, locs["it"])
         phase_metrics = locs.get('phase_reward_log', {})
         for phase in ('turn', 'translate', 'stand', 'turn_positive', 'turn_negative'):
             prefix = 'PhaseReward/' + phase + '/'

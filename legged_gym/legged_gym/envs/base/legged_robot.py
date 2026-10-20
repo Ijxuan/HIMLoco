@@ -46,6 +46,7 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.step_clearance import StepClearance
+from legged_gym.utils.swing_peak_height import SwingPeakHeight
 from legged_gym.utils.step_retraction import StepRetraction
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
@@ -150,12 +151,19 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "step_clearance"):
             self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
                                        command_world, self._sample_step_heights)
-        if hasattr(self, "step_retraction"):
+        if hasattr(self, "step_retraction") or hasattr(self, "swing_peak_height"):
             sole = self.feet_pos[..., 2] - self.cfg.rewards.step_clearance_foot_radius
             ground = self._sample_step_heights(self.feet_pos[..., :2])
             support = ((sole - ground).abs() <= self.cfg.rewards.step_clearance_support_tolerance) & (
                 self.contact_forces[:, self.feet_indices, 2] > self.cfg.rewards.step_retraction_contact_force)
-            self.step_retraction.update(self.feet_pos, self.commands, command_world, support)
+        if hasattr(self, "swing_peak_height"):
+            enabled = (self._gait_training_mask()
+                       & (self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
+                       & (self.commands[:, 2].abs() < self.cfg.rewards.step_retraction_max_yaw_rate))
+            self.swing_peak_height.update(sole - ground, support, self.commands, enabled)
+        if hasattr(self, "step_retraction"):
+            self.step_retraction.update(self.feet_pos, self.commands, command_world, support,
+                                        self.root_states[:, :2])
             if hasattr(self, "step_clearance"):
                 self.step_clearance.per_foot_cost.masked_fill_(self.step_retraction.stage == StepRetraction.RETRACT, 0.)
                 self.step_clearance.cost[:] = self.step_clearance.per_foot_cost.sum(-1)
@@ -232,6 +240,8 @@ class LeggedRobot(BaseTask):
             self.step_clearance.reset(env_ids)
         if hasattr(self, "step_retraction"):
             self.step_retraction.reset(env_ids)
+        if hasattr(self, "swing_peak_height"):
+            self.swing_peak_height.reset(env_ids)
         if hasattr(self, "long_stair_success"):
             self.long_stair_success[env_ids] = False
             self.long_stair_hold[env_ids] = 0.
@@ -274,6 +284,32 @@ class LeggedRobot(BaseTask):
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids] / torch.clip(self.episode_length_buf[env_ids], min=1) / self.dt)
             self.episode_sums[key][env_ids] = 0.
+        gait = self._gait_training_mask() if hasattr(self, 'swing_peak_height') or hasattr(self, 'step_retraction') else None
+        for attr, prefix in [('swing_peak_height', 'gait_height'), ('step_retraction', 'gait_retraction')]:
+            if not hasattr(self, attr):
+                continue
+            stats = getattr(self, attr).stats
+            groups = [(prefix, env_ids[gait[env_ids]])]
+            if attr == 'step_retraction':
+                groups.append(('retraction_other', env_ids[~gait[env_ids]]))
+            for group, ids in groups:
+                for foot, name in enumerate(self.feet_names):
+                    totals = {key: value[ids, foot].sum() for key, value in stats.items()}
+                    if attr == 'swing_peak_height':
+                        scale = self.cfg.rewards.scales.swing_peak_height
+                        totals['weighted_score_sum'] = totals['score_sum'] * scale
+                        totals['positive_reward_sum'] = totals['positive_sum'] * scale
+                        totals['negative_reward_sum'] = totals['negative_sum'] * scale
+                    else:
+                        scale = self.cfg.rewards.scales.step_retraction_stall
+                        for component in ('lag', 'over', 'landing'):
+                            totals[component + '_reward_sum'] = totals[component + '_integral'] * scale
+                        totals['weighted_score_sum'] = (totals['lag_reward_sum'] + totals['over_reward_sum']
+                            + totals['landing_reward_sum'] + totals['progress_sum'] * self.cfg.rewards.scales.step_retraction)
+                    for metric, value in totals.items():
+                        self.extras['episode'][f'{group}/{name}/{metric}'] = value
+            for values in stats.values():
+                values[env_ids] = 0.
         # log additional curriculum info
         if self.cfg.terrain.curriculum:
             self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
@@ -547,6 +583,10 @@ class LeggedRobot(BaseTask):
             else:
                 self.commands[:, 2] = torch.where(self.in_place_turn_buf, self.commands[:, 2], heading_yaw_commands)
 
+        # The low-speed gait group never receives lateral translation targets.
+        self.commands[self._gait_training_mask(), 1] = 0.
+        if self.cfg.commands.heading_command:
+            self.commands[self._gait_training_mask(), 2] = 0.
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights()
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
@@ -591,6 +631,10 @@ class LeggedRobot(BaseTask):
         self.in_place_turn_buf[stand_ids] = False
         self.commands[stand_ids, :3] = 0.
 
+    def _gait_training_mask(self):
+        fraction = getattr(self.cfg.commands, "gait_training_fraction", 0.)
+        return torch.arange(self.num_envs, device=self.device) < self.num_envs * fraction
+
     def _resample_commands(self, env_ids):
         """ Randommly select commands of some environments
 
@@ -615,21 +659,32 @@ class LeggedRobot(BaseTask):
             )
         else:
             short_turn = torch.zeros_like(long_turn)
+        gait = self._gait_training_mask()[env_ids]
+        long_turn &= ~gait
+        short_turn &= ~gait
         self.in_place_turn_buf[env_ids] = long_turn | short_turn
         in_place_turn_env_ids = env_ids[self.in_place_turn_buf[env_ids]]
         self.commands[in_place_turn_env_ids, :2] = 0.
         self.commands[in_place_turn_env_ids, 2] = self._sample_in_place_turn_yaw(
             len(in_place_turn_env_ids))
 
-        high_vel_env_ids = env_ids[(env_ids < (self.num_envs * 0.2)) & ~self.in_place_turn_buf[env_ids]]
-
-        self.commands[high_vel_env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(high_vel_env_ids), 1), device=self.device).squeeze(1)
-
-        # set y commands of high vel envs to zero
-        self.commands[high_vel_env_ids, 1:2] *= (torch.norm(self.commands[high_vel_env_ids, 0:1], dim=1) < 1.0).unsqueeze(1)
+        if getattr(self.cfg.commands, "gait_training_fraction", 0.) > 0:
+            gait_ids = env_ids[gait]
+            lo, hi = self.cfg.commands.gait_training_speed_range
+            speed = torch_rand_float(lo, hi, (len(gait_ids), 1), device=self.device).squeeze(1)
+            sign = torch.where(torch.rand(len(gait_ids), device=self.device) < .5, -1., 1.)
+            # Explicit zero-range playback/test configurations remain zero-command.
+            if self.command_ranges["lin_vel_x"] == [0., 0.]:
+                speed.zero_()
+            self.commands[gait_ids, 0] = speed * sign
+            self.commands[gait_ids, 1:3] = 0.
+        else:
+            high_vel_env_ids = env_ids[(env_ids < (self.num_envs * 0.2)) & ~self.in_place_turn_buf[env_ids]]
+            self.commands[high_vel_env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(high_vel_env_ids), 1), device=self.device).squeeze(1)
+            self.commands[high_vel_env_ids, 1:2] *= (torch.norm(self.commands[high_vel_env_ids, 0:1], dim=1) < 1.0).unsqueeze(1)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        self.commands[env_ids, :2] *= ((torch.norm(self.commands[env_ids, :2], dim=1) > 0.2) | gait).unsqueeze(1)
         if getattr(self.cfg.commands, "enable_turn_to_stand", False):
             self.command_stage[env_ids] = torch.where(
                 self.in_place_turn_buf[env_ids], self.COMMAND_TURN, self.COMMAND_NORMAL)
@@ -808,6 +863,8 @@ class LeggedRobot(BaseTask):
         Args:
             env_ids (List[int]): ids of environments being reset
         """
+        if getattr(self.cfg.commands, "gait_training_fraction", 0.) > 0:
+            return  # No high-speed group consumes the expanding command range.
         low_vel_env_ids = (env_ids > (self.num_envs * 0.2))
         high_vel_env_ids = (env_ids < (self.num_envs * 0.2))
         low_vel_env_ids = env_ids[low_vel_env_ids.nonzero(as_tuple=True)]
@@ -913,6 +970,8 @@ class LeggedRobot(BaseTask):
         self.measured_heights = self._get_heights()
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._init_orientation_reference()
+        if getattr(self.cfg.rewards.scales, "swing_peak_height", 0.) != 0.:
+            self.swing_peak_height = SwingPeakHeight(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards, self.dt)
         retraction_enabled = any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("step_retraction", "step_retraction_stall"))
         if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0.:
             if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
@@ -1137,6 +1196,7 @@ class LeggedRobot(BaseTask):
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
 
+        self.feet_names = feet_names
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
@@ -1231,6 +1291,13 @@ class LeggedRobot(BaseTask):
             self.stand_duration_steps = self._command_duration_steps(cfg.commands.stand_duration_range_s)
             long_duration = cfg.commands.in_place_turn_duration_s
             self.long_turn_duration_steps = self._command_duration_steps([long_duration, long_duration])[0]
+        fraction = getattr(cfg.commands, "gait_training_fraction", 0.)
+        if not math.isfinite(fraction) or not 0 <= fraction <= 1:
+            raise ValueError("Invalid gait_training_fraction")
+        if fraction > 0:
+            lo, hi = cfg.commands.gait_training_speed_range
+            if not (math.isfinite(lo) and math.isfinite(hi) and .2 <= lo <= hi):
+                raise ValueError("Gait speeds must be finite, ordered and >= 0.2 m/s")
         self.obs_scales = self.cfg.normalization.obs_scales
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
         self.command_ranges = class_to_dict(self.cfg.commands.ranges)
@@ -1587,6 +1654,9 @@ class LeggedRobot(BaseTask):
     def _reward_step_clearance(self):
         # Updated once per control step; reward queries are side-effect free.
         return self.step_clearance.cost
+
+    def _reward_swing_peak_height(self):
+        return self.swing_peak_height.score
 
     def _reward_foot_clearance(self):
         cur_footpos_translated = self.feet_pos - self.root_states[:, 0:3].unsqueeze(1)
