@@ -82,10 +82,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
-            step_retraction = 0.0  # Penalty-only band; no positive swing credit.
-            step_retraction_stall = -4.0
+            step_retraction = 0.1  # Signed per-foot event budget, maximum at 1 cm.
+            step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
-            swing_peak_height = 2.0  # Per foot/swing, only the gait-training group.
+            swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -111,9 +111,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
 
         # Training-only swing/edge rewards; actor/export inputs stay unchanged.
-        # Straight swings: 1.5--3 cm; subtract cumulative reverse body travel.
-        step_retraction_distance = 0.015  # Minimum effective retraction.
-        step_retraction_max_distance = 0.03  # Maximum WORLD retraction.
+        # Straight swings: 0.5--1.5 cm; subtract cumulative reverse body travel.
+        step_retraction_distance = 0.005  # Minimum effective retraction.
+        step_retraction_target_distance = 0.010
+        step_retraction_max_distance = 0.015  # Maximum WORLD retraction.
         step_retraction_reference_time = 0.30
         step_retraction_timeout = 0.40
         step_retraction_min_forward_speed = 0.10
@@ -132,7 +133,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
         step_clearance_release_distance = 0.03
         step_clearance_min_speed = 0.10
 
-        swing_peak_height_min = 0.05
+        swing_peak_height_min = 0.025
+        swing_peak_height_target = 0.05
         swing_peak_height_max = 0.08
         swing_peak_height_min_air_time = 0.08
         swing_peak_height_timeout = 0.50

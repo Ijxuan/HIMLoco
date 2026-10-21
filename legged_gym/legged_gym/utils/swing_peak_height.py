@@ -3,26 +3,27 @@ import math
 import torch
 
 
-def peak_height_score(height, lower=0.05, upper=0.08):
-    """Continuous bounded score: negative outside, positive inside, zero at edges."""
-    width = upper - lower
-    u = (height - lower) / width
-    inside = 4 * u * (1 - u)
+def peak_height_score(height, lower=0.025, upper=0.08, target=0.05):
+    """Bounded asymmetric curve: zero at bounds, +1 at the target."""
+    if not 0 < lower < target < upper:
+        raise ValueError('Expected 0 < lower < target < upper')
+    width = torch.where(height <= target, target - lower, upper - target)
+    inside = 1 - ((height - target) / width).square()
     below = -((lower - height) / lower).clamp(0, 1).square()
-    above = -((height - upper) / width).clamp(0, 1).square()
+    above = -((height - upper) / (upper - target)).clamp(0, 1).square()
     return torch.where(height < lower, below, torch.where(height > upper, above, inside))
 
 
 class SwingPeakHeight:
     def __init__(self, num_envs, num_feet, device, cfg, dt):
         self.cfg, self.dt = cfg, dt
-        for name in ('min', 'max', 'min_air_time', 'timeout', 'stance_time', 'landing_time'):
+        for name in ('min', 'target', 'max', 'min_air_time', 'timeout', 'stance_time', 'landing_time'):
             value = getattr(cfg, 'swing_peak_height_' + name)
             if not math.isfinite(value) or value <= 0:
                 raise ValueError('Invalid swing_peak_height_' + name)
         if not (0 < dt <= cfg.swing_peak_height_min_air_time < cfg.swing_peak_height_timeout):
             raise ValueError('Invalid swing height timing')
-        if cfg.swing_peak_height_min >= cfg.swing_peak_height_max:
+        if not cfg.swing_peak_height_min < cfg.swing_peak_height_target < cfg.swing_peak_height_max:
             raise ValueError('Invalid swing height band')
         shape = (num_envs, num_feet)
         self.active = torch.zeros(shape, dtype=torch.bool, device=device)
@@ -78,7 +79,7 @@ class SwingPeakHeight:
         self.event[:] = landed | timeout
         self.event_peak[:] = torch.where(self.event, self.peak, 0.)
         self.timed_out[:] = timeout
-        score = peak_height_score(self.peak, c.swing_peak_height_min, c.swing_peak_height_max)
+        score = peak_height_score(self.peak, c.swing_peak_height_min, c.swing_peak_height_max, c.swing_peak_height_target)
         # Tiny contact dropouts cannot earn positive credit; hanging cannot defer settlement.
         air_duration = self.elapsed - self.landing
         score = torch.where(air_duration + 1e-7 < c.swing_peak_height_min_air_time, score.clamp_max(0.), score)

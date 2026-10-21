@@ -305,7 +305,9 @@ class LeggedRobot(BaseTask):
                         for component in ('lag', 'over', 'landing'):
                             totals[component + '_reward_sum'] = totals[component + '_integral'] * scale
                         totals['weighted_score_sum'] = (totals['lag_reward_sum'] + totals['over_reward_sum']
-                            + totals['landing_reward_sum'] + totals['progress_sum'] * self.cfg.rewards.scales.step_retraction)
+                            + totals['landing_reward_sum'] + totals['score_sum'] * self.cfg.rewards.scales.step_retraction)
+                        totals['positive_reward_sum'] = totals['positive_sum'] * self.cfg.rewards.scales.step_retraction
+                        totals['negative_reward_sum'] = totals['negative_sum'] * self.cfg.rewards.scales.step_retraction
                     for metric, value in totals.items():
                         self.extras['episode'][f'{group}/{name}/{metric}'] = value
             for values in stats.values():

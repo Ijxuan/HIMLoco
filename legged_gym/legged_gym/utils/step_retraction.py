@@ -1,6 +1,7 @@
 """Bounded straight-swing retraction with reverse body travel removed from credit."""
 import math
 import torch
+from .swing_peak_height import peak_height_score
 
 
 class StepRetraction:
@@ -8,7 +9,7 @@ class StepRetraction:
 
     def __init__(self, num_envs, num_feet, device, cfg, dt):
         self.cfg, self.dt = cfg, dt
-        names = ('distance', 'max_distance', 'reference_time', 'timeout', 'min_forward_speed',
+        names = ('distance', 'target_distance', 'max_distance', 'reference_time', 'timeout', 'min_forward_speed',
                  'max_yaw_rate', 'stance_confirm_time', 'swing_confirm_time',
                  'landing_confirm_time', 'contact_force', 'landing_penalty_time')
         for name in names:
@@ -17,12 +18,13 @@ class StepRetraction:
                 raise ValueError('Invalid step_retraction_' + name)
         if not math.isfinite(dt) or dt <= 0 or cfg.step_retraction_timeout < cfg.step_retraction_reference_time:
             raise ValueError('Invalid retraction timing')
-        if cfg.step_retraction_max_distance <= cfg.step_retraction_distance:
+        if not cfg.step_retraction_distance < cfg.step_retraction_target_distance < cfg.step_retraction_max_distance:
             raise ValueError("Retraction maximum must exceed minimum")
         shape = (num_envs, num_feet)
         self.stage = torch.zeros(shape, dtype=torch.long, device=device)
         self.armed = torch.zeros(shape, dtype=torch.bool, device=device)
         self.initialized = torch.zeros(shape, dtype=torch.bool, device=device)
+        self.settled = torch.zeros_like(self.initialized)
         self.stance_time = torch.zeros(shape, device=device)
         self.air_time = torch.zeros(shape, device=device)
         self.landing_time = torch.zeros(shape, device=device)
@@ -49,11 +51,11 @@ class StepRetraction:
         self.stats = {k: torch.zeros(shape, device=device) for k in (
             'started', 'count', 'under', 'over', 'in_band', 'timeout', 'cancelled',
             'world_peak_sum_cm', 'effective_peak_sum_cm', 'body_backward_sum_cm',
-            'lag_integral', 'over_integral', 'landing_integral', 'progress_sum', 'enabled_seconds')}
+            'lag_integral', 'over_integral', 'landing_integral', 'progress_sum', 'score_sum', 'positive_sum', 'negative_sum', 'valid_landing', 'enabled_seconds')}
 
     def reset(self, ids):
-        self.stats["cancelled"][ids] += self.stage[ids] != self.IDLE
-        for value in (self.stage, self.armed, self.initialized, self.stance_time,
+        self.stats["cancelled"][ids] += (self.stage[ids] != self.IDLE) & ~self.settled[ids]
+        for value in (self.stage, self.armed, self.initialized, self.settled, self.stance_time,
                       self.air_time, self.landing_time, self.elapsed, self.origin,
                       self.direction, self.command_direction, self.previous_xy, self.best, self.displacement,
                       self.previous_base_xy, self.body_backward, self.world_displacement,
@@ -85,10 +87,11 @@ class StepRetraction:
         aligned = (self.command_direction * input_direction[:, None]).sum(-1) > .5
         cancel = (~enabled.expand_as(cycle) | (cycle & ~aligned)
                   | (self.armed & ~aligned & (self.air_time > 0)))
-        self.stats["cancelled"] += cancel & cycle
+        self.stats["cancelled"] += cancel & cycle & ~self.settled
         self.stats["enabled_seconds"] += enabled * self.dt
         self.effective_peak.masked_fill_(cancel, 0.)
         self.stage.masked_fill_(cancel, self.IDLE)
+        self.settled.masked_fill_(cancel, False)
         self.armed.masked_fill_(cancel, False)
         self.air_time.masked_fill_(cancel, 0.)
         self.stance_time.masked_fill_(cancel, 0.)
@@ -114,6 +117,7 @@ class StepRetraction:
         self.effective_peak[first_air] = 0.
         self.body_backward[first_air] = 0.
         self.elapsed[first_air] = 0.
+        self.settled[first_air] = False
         self.air_time[:] = torch.where(idle & self.armed & ~support & eligible,
             self.air_time + self.dt, torch.zeros_like(self.air_time))
         self.started[:] = idle & self.armed & (self.air_time + 1e-7 >= c.step_retraction_swing_confirm_time) & eligible & self.initialized
@@ -124,7 +128,7 @@ class StepRetraction:
 
         cycle = self.stage != self.IDLE
         unfinished = ((self.stage == self.RETRACT) | (self.stage == self.TIMED_OUT)) & eligible
-        self.elapsed += unfinished * self.dt
+        self.elapsed += cycle * eligible * self.dt
         # Accumulate only reverse body travel along each foot's locked world axis.
         # Include the first unconfirmed air samples; forward recovery cannot refund it.
         tracking = eligible & (cycle | (idle & self.armed & ~support))
@@ -143,14 +147,10 @@ class StepRetraction:
         self.over_cost *= cycle & eligible
         self.displacement[:] = torch.where(cycle, signed, torch.zeros_like(signed))
         distance = signed.clamp(0, c.step_retraction_distance)
-        increment = (distance - self.best).clamp_min(0.) * unfinished * ~support
         self.best[:] = torch.where(unfinished & ~support, torch.maximum(self.best, distance), self.best)
-        self.progress_reward[:] = (increment / (c.step_retraction_distance * self.dt)).sum(-1)
+        # Positive credit settles only at landing, after overshoot is known.
         self.completed[:] = unfinished & (self.best >= c.step_retraction_distance - 1e-6)
         self.stage[self.completed] = self.COMPLETE
-        late = unfinished & ~self.completed & (self.elapsed + 1e-7 >= c.step_retraction_timeout)
-        self.stats["timeout"] += late & (self.stage == self.RETRACT)
-        self.stage[late] = self.TIMED_OUT
         reference = c.step_retraction_distance * (self.elapsed / c.step_retraction_reference_time).clamp(0, 1)
         lag = ((reference - signed) / c.step_retraction_distance).clamp(0, 1).square()
         self.per_foot_lag_cost[:] = lag * unfinished * ~self.completed
@@ -163,17 +163,37 @@ class StepRetraction:
         deficit = (1 - self.best / c.step_retraction_distance).clamp(0, 1).square()
         terminal = landed * (deficit + self.over_cost) * (c.step_retraction_landing_penalty_time / self.dt)
         self.stall_cost[:] = (self.per_foot_lag_cost + self.over_cost + terminal).sum(-1)
-        self.stats['count'] += landed
-        self.stats['under'] += landed & (self.stage != self.COMPLETE)
-        self.stats['over'] += landed & (self.over_cost > 0)
-        self.stats['in_band'] += landed & ~self.failed_landing
-        self.stats['world_peak_sum_cm'] += landed * self.world_best * 100
-        self.stats['effective_peak_sum_cm'] += landed * self.effective_peak * 100
-        self.stats['body_backward_sum_cm'] += landed * self.body_backward * 100
+        # One signed event per swing. A timed-out foot cannot earn a second
+        # score by eventually landing or completing the distance requirement.
+        timeout = cycle & eligible & ~landed & ~self.settled & (self.elapsed + 1e-7 >= c.step_retraction_timeout)
+        event = (landed | timeout) & ~self.settled
+        score = peak_height_score(self.effective_peak, c.step_retraction_distance,
+                                  c.step_retraction_max_distance, c.step_retraction_target_distance)
+        world_over = ((self.world_best - c.step_retraction_max_distance)
+                      / (c.step_retraction_max_distance - c.step_retraction_target_distance)).clamp(0, 1).square()
+        score = torch.where(self.world_best > c.step_retraction_max_distance,
+                            torch.minimum(score, -world_over), score)
+        score = torch.where(timeout, -torch.ones_like(score), score) * event
+        self.progress_reward[:] = score.sum(-1) / self.dt
+        self.settled |= event
+        self.stage[timeout] = self.TIMED_OUT
+        self.stats['timeout'] += timeout
+        self.stats['count'] += event
+        self.stats['under'] += event & (self.effective_peak < c.step_retraction_distance)
+        self.stats['over'] += event & (self.world_best > c.step_retraction_max_distance)
+        in_band = (self.effective_peak >= c.step_retraction_distance) & (self.world_best <= c.step_retraction_max_distance)
+        self.stats['in_band'] += event & in_band
+        self.stats['valid_landing'] += event & landed & in_band
+        self.stats['world_peak_sum_cm'] += event * self.world_best * 100
+        self.stats['effective_peak_sum_cm'] += event * self.effective_peak * 100
+        self.stats['body_backward_sum_cm'] += event * self.body_backward * 100
+        self.stats['score_sum'] += score
+        self.stats['positive_sum'] += score.clamp_min(0.)
+        self.stats['negative_sum'] += score.clamp_max(0.)
         self.stats['lag_integral'] += self.per_foot_lag_cost * self.dt
         self.stats['over_integral'] += self.over_cost * self.dt
         self.stats['landing_integral'] += terminal * self.dt
-        self.stats['progress_sum'] += increment / c.step_retraction_distance
+        self.stats['progress_sum'] += score  # Compatibility alias for signed event scores.
         self.stage[landed] = self.IDLE
         self.armed[landed] = False
         self.stance_time[landed] = 0.

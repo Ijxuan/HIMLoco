@@ -39,6 +39,7 @@ import torch
 from rsl_rl.algorithms import PPO
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 from rsl_rl.env import VecEnv
+from rsl_rl.utils.log_tags import episode_scalar_tag
 
 
 class OnPolicyRunner:
@@ -159,8 +160,10 @@ class OnPolicyRunner:
                     continue
                 # Missing metrics are absent observations, not zero successes.
                 value = infotensor.mean()
-                self.writer.add_scalar('Episode/' + key, value, locs['it'])
-                ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+                tag = episode_scalar_tag(key)
+                self.writer.add_scalar(tag, value, locs['it'])
+                if not tag.startswith('temp/'):
+                    ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 

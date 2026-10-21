@@ -51,7 +51,7 @@ class TestGaitMetrics(unittest.TestCase):
         t=test_step_retraction.TestStepRetraction();t.setUp();t.trigger();t.update(50)
         self.assertTrue((t.r.stats['timeout']==1).all())
         t.r.reset(torch.tensor([0]));t.r.reset(torch.tensor([0]))
-        self.assertTrue((t.r.stats['cancelled'][0]==1).all())
+        self.assertFalse(t.r.stats['cancelled'][0].any())  # Already settled by timeout.
         self.assertFalse(t.r.stats['cancelled'][1].any())
 
     def test_height_score_splits_and_valid_landing(self):

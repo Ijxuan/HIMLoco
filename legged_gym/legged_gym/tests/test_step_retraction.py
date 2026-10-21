@@ -37,12 +37,11 @@ class TestStepRetraction(unittest.TestCase):
 
     def test_reward_budget_no_repeated_credit_and_second_swing(self):
         self.trigger();total=torch.zeros(2)
-        for x in [-.01,0.,-.01,-.02,-.025,-.03]:
+        for x in [-.005,0.,-.005,-.01]:
             self.feet[...,0]=x;self.update();total += self.r.progress_reward*.02
-            if x==0.:self.assertEqual(self.r.progress_reward.sum(),0)
-        torch.testing.assert_close(total,torch.tensor([4.,4.]))
-        self.assertTrue((self.r.stage==self.r.COMPLETE).all())
+        self.assertEqual(total.sum(),0)
         self.support.fill_(True);self.update(2)
+        torch.testing.assert_close(self.r.progress_reward*.02,torch.tensor([4.,4.]))
         self.assertFalse(self.r.failed_landing.any())
         self.arm();self.support.zero_();self.update(2)
         self.assertTrue(self.r.started.all())
@@ -60,9 +59,11 @@ class TestStepRetraction(unittest.TestCase):
         for vx,world in [(.5,[0.,.5]),(-.5,[-.5,0.])]:
             self.setUp();self.cmd[:,0]=vx;self.world[:]=torch.tensor(world)
             self.trigger()
-            self.feet[...,:2]=-self.world[:,None,:]/self.world.norm(dim=1)[:,None,None]*.03
+            self.feet[...,:2]=-self.world[:,None,:]/self.world.norm(dim=1)[:,None,None]*.01
             self.update()
             self.assertTrue(self.r.completed.all())
+            self.assertEqual(self.r.progress_reward.sum(),0)
+            self.support.fill_(True);self.update(2)
             torch.testing.assert_close(self.r.progress_reward*.02,torch.tensor([4.,4.]))
 
     def test_body_yaw_cannot_cancel_or_rotate_latched_axis(self):
@@ -95,7 +96,7 @@ class TestStepRetraction(unittest.TestCase):
         self.trigger();self.support.fill_(True);self.feet[...,0]=-.03
         self.update(2)
         self.assertTrue(self.r.failed_landing.all())
-        self.assertEqual(self.r.progress_reward.sum(),0)
+        torch.testing.assert_close(self.r.progress_reward*.02,torch.full((2,),-4.))
         self.assertTrue((self.r.stall_cost>=60).all())
         self.assertEqual(self.r.stage.sum(),0)
 
@@ -103,7 +104,7 @@ class TestStepRetraction(unittest.TestCase):
         self.arm();self.support.zero_();self.feet[...,0]=-.01;self.update()
         self.assertEqual(self.r.progress_reward.sum(),0)
         self.feet[...,0]=-.02;self.update()
-        torch.testing.assert_close(self.r.best,torch.full((2,4),.015))
+        torch.testing.assert_close(self.r.best,torch.full((2,4),.005))
         self.assertTrue(self.r.started.all())
         self.support.fill_(True);self.update()  # One-frame touchdown cannot rearm.
         self.support.zero_();self.update()
@@ -123,7 +124,7 @@ class TestStepRetraction(unittest.TestCase):
         self.assertEqual(self.r.stage.sum(),0)
         self.trigger();self.update(25)
         self.assertTrue((self.r.stage==self.r.TIMED_OUT).all())
-        self.feet[...,0]=-.03;self.update()
+        self.feet[...,0]=-.01;self.update()
         self.assertTrue(self.r.completed.all())
         self.assertEqual(self.r.stall_cost.sum(),0)
 
@@ -136,7 +137,7 @@ class TestStepRetraction(unittest.TestCase):
         self.assertEqual(self.r.stage[:,[0,2,3]].sum(),0)
 
     def test_band_boundaries_and_landing_penalty(self):
-        for distance, valid in [(0.,False),(.014,False),(.015,True),(.02,True),(.03,True),(.031,False),(.06,False)]:
+        for distance, valid in [(0.,False),(.004,False),(.005,True),(.01,True),(.015,True),(.016,False),(.03,False)]:
             with self.subTest(distance=distance):
                 self.setUp();self.trigger();self.feet[...,0]=-distance;self.update(20)
                 if valid:self.assertEqual(self.r.stall_cost.sum(),0)
@@ -145,7 +146,7 @@ class TestStepRetraction(unittest.TestCase):
                 self.assertEqual(bool(self.r.failed_landing.all()),not valid)
 
     def test_overshoot_after_completion_survives_forward_recovery(self):
-        self.trigger();self.feet[...,0]=-.02;self.update()
+        self.trigger();self.feet[...,0]=-.01;self.update()
         self.assertTrue(self.r.completed.all())
         self.feet[...,0]=-.04;self.update()
         self.assertGreater(self.r.over_cost.sum(),0)
@@ -155,7 +156,7 @@ class TestStepRetraction(unittest.TestCase):
         self.assertTrue(self.r.failed_landing.all())
 
     def test_valid_retraction_can_then_swing_forward_without_under_penalty(self):
-        self.trigger();self.feet[...,0]=-.02;self.update()
+        self.trigger();self.feet[...,0]=-.01;self.update()
         self.feet[...,0]=.1;self.update(20)
         self.assertEqual(self.r.stall_cost.sum(),0)
         self.support.fill_(True);self.update(2)
@@ -194,7 +195,7 @@ class TestStepRetraction(unittest.TestCase):
     def test_body_forward_does_not_create_world_retraction_credit(self):
         self.trigger();self.base[:,0]=.05;self.feet[...,0]=.02;self.update()
         self.assertEqual(self.r.best.sum(),0)
-        self.feet[...,0]=-.02;self.update()
+        self.feet[...,0]=-.01;self.update()
         self.assertTrue(self.r.completed.all())
         self.assertEqual(self.r.stall_cost.sum(),0)
 
@@ -204,8 +205,40 @@ class TestStepRetraction(unittest.TestCase):
         self.assertTrue(self.r.completed.all())  # Minimum reached, not a band-valid landing.
         self.assertGreater(self.r.over_cost.sum(),0)
 
-    def test_penalty_only_effective_config(self):
-        self.assertEqual(MiniChRoughCfg.rewards.scales.step_retraction,0.)
-        self.assertLess(MiniChRoughCfg.rewards.scales.step_retraction_stall,0.)
+    def test_landing_peak_bonus_and_overshoot_not_refunded(self):
+        for distance, expected in [(.004,-.04),(.005,0.),(.0075,.75),(.01,1.),(.0125,.75),(.015,0.),(.02,-1.)]:
+            with self.subTest(distance=distance):
+                self.setUp();self.trigger()
+                self.feet[...,0]=-distance;self.update(5)
+                self.assertEqual(self.r.progress_reward.sum(),0)
+                self.feet[...,0]=.1;self.update()
+                self.support.fill_(True);self.update(2)
+                torch.testing.assert_close(self.r.progress_reward*.02,torch.full((2,),4*expected),atol=1e-5,rtol=1e-5)
+                torch.testing.assert_close(self.r.stats['progress_sum'],torch.full((2,4),expected),atol=1e-5,rtol=1e-5)
+                self.update(5);self.assertEqual(self.r.progress_reward.sum(),0)
+
+    def test_timeout_settles_once_even_after_optimal_retraction(self):
+        for distance in [0.,.01,.02]:
+            self.setUp();self.trigger();self.feet[...,0]=-distance
+            total=torch.zeros(2)
+            for _ in range(30):
+                self.update();total+=self.r.progress_reward*.02
+            torch.testing.assert_close(total,torch.full((2,),-4.))
+            self.assertTrue((self.r.stats['count']==1).all())
+            self.assertTrue((self.r.stats['timeout']==1).all())
+            self.feet[...,0]=-.01;self.support.fill_(True);self.update(2)
+            self.assertEqual(self.r.progress_reward.sum(),0)
+            self.assertTrue((self.r.stats['count']==1).all())
+
+    def test_world_overshoot_cannot_receive_positive_event_score(self):
+        self.trigger();self.base[:,0]=-.01;self.feet[...,0]=-.02;self.update(4)
+        self.support.fill_(True);self.update(2)
+        torch.testing.assert_close(self.r.progress_reward*.02,torch.full((2,),-4.))
+        torch.testing.assert_close(self.r.stats['positive_sum'],torch.zeros(2,4))
+        torch.testing.assert_close(self.r.stats['score_sum'],self.r.stats['positive_sum']+self.r.stats['negative_sum'])
+
+    def test_landing_bonus_effective_config(self):
+        self.assertGreater(MiniChRoughCfg.rewards.scales.step_retraction,0.)
+        self.assertEqual(MiniChRoughCfg.rewards.scales.step_retraction_stall,0.)
 
 if __name__=='__main__':unittest.main()

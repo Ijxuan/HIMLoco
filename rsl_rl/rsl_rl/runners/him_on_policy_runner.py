@@ -40,6 +40,7 @@ from rsl_rl.algorithms import PPO, HIMPPO
 from rsl_rl.modules import HIMActorCritic
 from rsl_rl.env import VecEnv
 from rsl_rl.utils.gait_metrics import summarize_gait_episode_metrics
+from rsl_rl.utils.log_tags import episode_scalar_tag, diagnostic_scalar_tag
 
 
 class HIMOnPolicyRunner:
@@ -161,7 +162,7 @@ class HIMOnPolicyRunner:
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
         self.tot_time += locs['collection_time'] + locs['learn_time']
         for key, value in locs.get('phase_reward_log', {}).items():
-            self.writer.add_scalar(key, value, locs['it'])
+            self.writer.add_scalar(diagnostic_scalar_tag(key), value, locs['it'])
         iteration_time = locs['collection_time'] + locs['learn_time']
 
         ep_string = f''
@@ -177,11 +178,11 @@ class HIMOnPolicyRunner:
                     continue
                 # Missing metrics are absent observations, not zero successes.
                 value = infotensor.mean()
-                self.writer.add_scalar('Episode/' + key, value, locs['it'])
+                self.writer.add_scalar(episode_scalar_tag(key), value, locs['it'])
                 if not key.startswith(("gait_height/", "gait_retraction/", "retraction_other/")):
                     ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
         for key, value in summarize_gait_episode_metrics(locs["ep_infos"]).items():
-            self.writer.add_scalar(key, value, locs["it"])
+            self.writer.add_scalar(diagnostic_scalar_tag(key), value, locs["it"])
         phase_metrics = locs.get('phase_reward_log', {})
         for phase in ('turn', 'translate', 'stand', 'turn_positive', 'turn_negative'):
             prefix = 'PhaseReward/' + phase + '/'
