@@ -34,6 +34,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         turn_to_stand_probability = 0.1
 
         class ranges(LeggedRobotCfg.commands.ranges):
+            lin_vel_x = [-0.6, 0.6]  # 前后速度，m/s
             ang_vel_yaw = [-1.0, 1.0]
 
     class init_state(LeggedRobotCfg.init_state):
@@ -82,10 +83,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             dof_acc = -2.5e-7
             joint_power = -2e-5
             base_height = -30.0
-            step_retraction = 0.1  # Signed per-foot event budget, maximum at 1 cm.
+            step_retraction = 0.1  # Signed per-foot event budget, maximum at 1 cm.后摆
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
-            swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.
+            swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.抬腿
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -94,7 +95,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             turn_air_time_overdue = -1.0
             collision = 0.0
             termination = 0.0
-            torques = 0.0
+            torques = -2e-4
             dof_vel = 0.0
             dof_pos_limits = 0.0
             dof_vel_limits = 0.0
