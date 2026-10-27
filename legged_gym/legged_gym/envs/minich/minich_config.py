@@ -82,6 +82,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             orientation = -1.2  # Terrain-relative angular cost; retune after training.
             dof_acc = -2.5e-7
             joint_power = -2e-5
+            foot_vertical_force = -1e-4  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
             base_height = -30.0
             step_retraction = 0.1  # Signed per-foot event budget, maximum at 1 cm.后摆
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
@@ -143,6 +144,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
         swing_peak_height_landing_time = 0.04
 
         terrain_relative_orientation = True
+        # World-Z foot force, sampled each 5 ms while the policy remains at 20 ms.
+        # Positive target uphill angle: <=5 deg flat, >=10 deg stairs, blend between.
+        foot_vertical_force_flat_threshold = 130.0  # N per foot
+        foot_vertical_force_stair_threshold = 160.0  # N per foot
+        foot_vertical_force_flat_angle_deg = 5.0
+        foot_vertical_force_stair_angle_deg = 10.0
+        foot_vertical_force_min_forward_speed = 0.1  # m/s; stand/backward/sideways excluded
         orientation_window_half_length = 0.4  # 0.8 m fore/aft fitting window.
         orientation_window_half_width = 0.2   # 0.4 m lateral fitting window.
         orientation_deadband_deg = 5.0
