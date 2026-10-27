@@ -34,7 +34,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         turn_to_stand_probability = 0.1
 
         class ranges(LeggedRobotCfg.commands.ranges):
-            lin_vel_x = [-0.6, 0.6]  # 前后速度，m/s
+            lin_vel_x = [-1.0, 1.0]  # 前后速度，m/s
             ang_vel_yaw = [-1.0, 1.0]
 
     class init_state(LeggedRobotCfg.init_state):
