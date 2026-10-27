@@ -48,6 +48,7 @@ from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.step_clearance import StepClearance
 from legged_gym.utils.swing_peak_height import SwingPeakHeight
 from legged_gym.utils.step_retraction import StepRetraction
+from legged_gym.utils.foot_vertical_force import FootVerticalForce
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
@@ -104,6 +105,9 @@ class LeggedRobot(BaseTask):
                 self.delayed_actions[:, i] = self.last_actions + (self.actions - self.last_actions) * (i >= delay_steps)
         # step physics and render each frame
         self.render()
+        foot_force_cost = getattr(self, "foot_vertical_force", None)
+        if foot_force_cost is not None:
+            foot_force_cost.begin(self.orientation_target_normal, self.base_quat, self.commands)
         for _ in range(self.cfg.control.decimation):
             self.torques = self._compute_torques(self.delayed_actions[:, _]).view(self.torques.shape)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
@@ -111,6 +115,10 @@ class LeggedRobot(BaseTask):
             if self.device == 'cpu':
                 self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
+            if foot_force_cost is not None:
+                self.gym.refresh_net_contact_force_tensor(self.sim)
+                foot_force_cost.accumulate(self.contact_forces[:, self.feet_indices])
+                self._foot_force_contact_fresh = True
         termination_ids, termination_priveleged_obs = self.post_physics_step()
 
         # return clipped obs, clipped states (None), rewards, dones and infos
@@ -126,7 +134,9 @@ class LeggedRobot(BaseTask):
             calls self._draw_debug_vis() if needed
         """
         self.gym.refresh_actor_root_state_tensor(self.sim)
-        self.gym.refresh_net_contact_force_tensor(self.sim)
+        if not getattr(self, "_foot_force_contact_fresh", False):
+            self.gym.refresh_net_contact_force_tensor(self.sim)
+        self._foot_force_contact_fresh = False
         self.gym.refresh_rigid_body_state_tensor(self.sim)
 
         self.episode_length_buf += 1
@@ -238,6 +248,8 @@ class LeggedRobot(BaseTask):
             self.orientation_target_normal[env_ids] = -self.gravity_vec[env_ids]
         if hasattr(self, "step_clearance"):
             self.step_clearance.reset(env_ids)
+        if hasattr(self, "foot_vertical_force"):
+            self.foot_vertical_force.reset(env_ids)
         if hasattr(self, "step_retraction"):
             self.step_retraction.reset(env_ids)
         if hasattr(self, "swing_peak_height"):
@@ -1033,6 +1045,12 @@ class LeggedRobot(BaseTask):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.
         """
+        if self.reward_scales.get("foot_vertical_force", 0.) != 0.:
+            if (not hasattr(self, "orientation_target_normal")
+                    or self.cfg.sim.physx.contact_collection == 0):
+                raise ValueError("foot_vertical_force requires terrain-relative orientation and contact collection")
+            self.foot_vertical_force = FootVerticalForce(
+                self.num_envs, self.device, self.cfg.rewards, self.cfg.control.decimation)
         if (hasattr(self, "turn_lift_ages")
                 and self.reward_scales.get("feet_air_time", 0.) != 0.):
             raise ValueError("Use turn_lift_frequency/turn_air_time_overdue with turn-lift buffers; disable feet_air_time")
@@ -1869,6 +1887,10 @@ class LeggedRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+    def _reward_foot_vertical_force(self):
+        # Pure cached rate: repeated reward queries cannot consume/reset samples.
+        return self.foot_vertical_force.cost
 
     def _get_raibert_desired_foot_xy(self, commands=None):
         """Return [env, FL/FR/RL/RR, XY] targets in the full body frame."""

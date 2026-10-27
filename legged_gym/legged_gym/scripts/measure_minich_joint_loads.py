@@ -21,6 +21,8 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs import *
 from legged_gym.utils import class_to_dict, task_registry
 from play_minich_flat_height import install_fixed_reset, reset_to_fixed_state
+from minich_heat_power import heat_model, heat_power, whole_body_statistics
+from minich_torque_penalty import torque_square_statistics
 
 
 CASES = (
@@ -105,6 +107,9 @@ def configure(args):
 def write_results(output, meta, torques, velocities, states, stages, times, env):
     limits = env.torque_limits.detach().cpu().numpy()
     names = env.dof_names
+    model = heat_model(names)
+    meta["heat_model"] = model
+    coefficients = model["coefficients_W_per_Nm2"]
     stable = np.array(stages) == "steady"
     report = {"metadata": meta, "cases": {}}
     rows = []
@@ -124,8 +129,15 @@ def write_results(output, meta, torques, velocities, states, stages, times, env)
             if not mask.any():
                 continue
             stage_joints = {}
+            case.setdefault("whole_body_by_stage", {})[stage] = whole_body_statistics(
+                torques[mask, case_index], velocities[mask, case_index], coefficients)
+            case["whole_body_by_stage"][stage].update(
+                torque_square_statistics(torques[mask, case_index]))
             for j, name in enumerate(names):
                 stats = joint_statistics(torques[mask, case_index, j], velocities[mask, case_index, j], limits[j])
+                heat = torques[mask, case_index, j] ** 2 * coefficients[j]
+                stats.update(estimated_copper_loss_mean_W=float(heat.mean()),
+                             estimated_copper_loss_peak_W=float(heat.max()))
                 stage_joints[name] = stats
                 rows.append({"case": label, "stage": stage, "joint": name, **stats})
             if stage == "steady":
@@ -143,6 +155,7 @@ def write_results(output, meta, torques, velocities, states, stages, times, env)
         writer.writerows(rows)
     # Full physical-step series, indexed by case and DOF names in metadata.
     np.savez_compressed(output / "physics_samples.npz", torque_Nm=torques, velocity_rad_s=velocities,
+                        estimated_copper_loss_W=heat_power(torques, coefficients),
                         power_W=torques * velocities, state=states, time_s=times, stage=stages,
                         case_names=[case[0] for case in CASES], dof_names=names)
     lines = ["# Mini Cheetah joint load measurement", "", f"Policy: `{meta['policy']}`", "",
@@ -154,6 +167,21 @@ def write_results(output, meta, torques, velocities, states, stages, times, env)
     for label, case in report["cases"].items():
         for group, stats in case["groups_worst_motor"].items():
             lines.append(f"| {label} | {group} | {stats['torque_rms_Nm']:.3f} | {stats['torque_p99_abs_Nm']:.3f} | {stats['torque_peak_abs_Nm']:.3f} | {stats['power_mean_abs_W']:.3f} | {stats['power_peak_abs_W']:.3f} |")
+    lines += ["", "## Whole-body steady power", "",
+              "Nominal uncalibrated equivalent copper loss = sum(k * torque^2), including zero-speed holding. Separate from mechanical power; not a fraction of it or a battery-power measurement.",
+              "R_equiv=0.173 ohm, Kt_eff=0.075 Nm/A, gear ratios=6/6/9.33. Phase/current convention and hardware parameters require calibration.", "",
+              "| Case | Mean abs mechanical W | Peak abs mechanical W | Estimated mean copper loss W | Estimated peak copper loss W |",
+              "|---|---:|---:|---:|---:|"]
+    for label, case in report["cases"].items():
+        s = case["whole_body_by_stage"]["steady"]
+        lines.append(f"| {label} | {s['mechanical_abs_mean_W']:.3f} | {s['mechanical_abs_peak_W']:.3f} | {s['estimated_copper_loss_mean_W']:.3f} | {s['estimated_copper_loss_peak_W']:.3f} |")
+    lines += ["", "## Torque-square cost (raw physics samples)", "",
+              "Raw sum(torque^2), before coefficient and dt. Actual training rewards sample the final physics substep of each policy cycle.", "",
+              "| Case | Mean sum torque squared Nm^2 | P95 | Peak |",
+              "|---|---:|---:|---:|"]
+    for label, case in report["cases"].items():
+        s = case["whole_body_by_stage"]["steady"]
+        lines.append(f"| {label} | {s['torque_square_sum_mean_Nm2']:.3f} | {s['torque_square_sum_p95_Nm2']:.3f} | {s['torque_square_sum_peak_Nm2']:.3f} |")
     lines += ["", "## Tracking and validity", ""]
     for label, case in report["cases"].items():
         lines.append(f"- {label}: actual mean vx/vy/yaw = {case['actual_mean_vx_vy_yaw']}; minimum height = {case['min_base_height_m']:.3f} m; fell = {case['fell']}; trunk contact peak = {case['max_trunk_contact_force_N']:.3f} N.")

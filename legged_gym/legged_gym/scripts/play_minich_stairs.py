@@ -9,6 +9,7 @@ CPU smoke playback:
     python -u play_minich_stairs.py --headless --sim_device=cpu --pipeline=cpu --rl_device=cpu
 """
 from types import SimpleNamespace
+import math
 
 import play_minich_flat_height as flat  # Import Isaac Gym before torch.
 import numpy as np
@@ -24,11 +25,11 @@ from legged_gym.utils import get_args, task_registry
 #     ("latest", -1, -1),
 # )
 POLICY_SPECS = (
-    ("manual_1", -1, -1),
+    ("manual_1", -2, -1),#最右
     ("manual_2", -1, -1),
     ("latest", -1, -1),
 )
-STAIR_START_X_M = 1.0
+STAIR_START_X_M = 0.5
 STAIR_HEIGHT_M = 0.08
 STAIR_DEPTH_M = 0.20
 STAIR_COUNT = 20
@@ -37,7 +38,12 @@ INITIAL_BASE_HEIGHT_M = flat.INITIAL_BASE_HEIGHT_M
 ACTION_SCALE = flat.ACTION_SCALE
 CALF_KP = 24.0
 CALF_KD = 0.8
-FORWARD_SPEED_M_S = 0.5#速度应该是
+# 前进目标速度：平均值 ± 波动幅度；默认范围 0.4～0.6 m/s。
+# 平均值是波形中心/完整周期均值，不含前后站立阶段。
+FORWARD_SPEED_MEAN_M_S = 0.4
+FORWARD_SPEED_AMPLITUDE_M_S = 0.4  # 半幅；设为 0 可恢复恒速。
+FORWARD_SPEED_RATE_M_S2 = 0.4  # 线性上升/下降斜率的绝对值。
+FORWARD_SPEED_WAVEFORM = "linear"  # 当前支持 linear（三角波）；后续可扩展 sine。
 STAND_BEFORE_S = 3.0
 FORWARD_S = 10.0
 STAND_AFTER_S = 6.0
@@ -166,6 +172,31 @@ def scheduled_phase(step, dt):
     return "stand_after"
 
 
+def validate_speed_profile():
+    if FORWARD_SPEED_WAVEFORM != "linear":
+        raise ValueError("FORWARD_SPEED_WAVEFORM currently supports only 'linear'")
+    values = (FORWARD_SPEED_MEAN_M_S, FORWARD_SPEED_AMPLITUDE_M_S,
+              FORWARD_SPEED_RATE_M_S2)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("Forward speed parameters must be finite")
+    if FORWARD_SPEED_AMPLITUDE_M_S < 0 or FORWARD_SPEED_RATE_M_S2 <= 0:
+        raise ValueError("Speed amplitude must be >= 0 and speed rate must be > 0")
+
+
+def scheduled_command(step, dt):
+    """Start at the lower bound; ramp up/down using forward-phase sim time."""
+    if scheduled_phase(step, dt) != "forward":
+        return (0., 0., 0.)
+    amplitude = FORWARD_SPEED_AMPLITUDE_M_S
+    speed = FORWARD_SPEED_MEAN_M_S
+    if amplitude > 0:
+        elapsed = (step - int(round(STAND_BEFORE_S / dt))) * dt
+        # Travel 0 -> 2A -> 0 at the configured rate; period = 4A / rate.
+        travel = (elapsed * FORWARD_SPEED_RATE_M_S2) % (4. * amplitude)
+        speed += amplitude - abs(travel - 2. * amplitude)
+    return (speed, 0., 0.)
+
+
 def load_policies(env, args, train_cfg):
     policies = []
     original_load = torch.load
@@ -194,6 +225,7 @@ def load_policies(env, args, train_cfg):
 
 @torch.no_grad()
 def play(args):
+    validate_speed_profile()
     if len(POLICY_SPECS) != 3 or POLICY_SPECS[-1][0] != "latest":
         raise ValueError("Specify three policies, with latest in the last slot")
     if args.rl_device == "cpu":
@@ -224,13 +256,19 @@ def play(args):
             f"{STAIR_COUNT} steps, rise={STAIR_HEIGHT_M:.2f}m, tread={STAIR_DEPTH_M:.2f}m; "
             f"top={STAIR_COUNT * STAIR_HEIGHT_M:.2f}m; "
             f"sequence={STAND_BEFORE_S}s stand -> {FORWARD_S}s forward "
-            f"at {FORWARD_SPEED_M_S}m/s -> {STAND_AFTER_S}s stand",
+            f"-> {STAND_AFTER_S}s stand; "
+            f"target waveform={FORWARD_SPEED_WAVEFORM}, "
+            f"mean={FORWARD_SPEED_MEAN_M_S:g}m/s, "
+            f"range=[{FORWARD_SPEED_MEAN_M_S - FORWARD_SPEED_AMPLITUDE_M_S:g}, "
+            f"{FORWARD_SPEED_MEAN_M_S + FORWARD_SPEED_AMPLITUDE_M_S:g}]m/s, "
+            f"rate=±{FORWARD_SPEED_RATE_M_S2:g}m/s², "
+            f"period={4. * FORWARD_SPEED_AMPLITUDE_M_S / FORWARD_SPEED_RATE_M_S2:g}s",
             flush=True,
         )
         for step in range(steps):
             phase = scheduled_phase(step, env.dt)
             meter.set_phase(phase)
-            command = (FORWARD_SPEED_M_S, 0., 0.) if phase == "forward" else (0., 0., 0.)
+            command = scheduled_command(step, env.dt)
             flat.set_command(env, command)
             # As in flat playback, only env.step() advances the history.
             scaled_commands = env.commands[:, :3] * env.commands_scale
@@ -244,7 +282,7 @@ def play(args):
                 positions = env.root_states[:, 0].cpu().tolist()
                 values = [f"{spec[0]}: x={x:.3f}m, world_z={world:.3f}m, above_ground={ground:.3f}m, error={error:+.3f}m"
                           for spec, x, (world, ground, error) in zip(POLICY_SPECS, positions, heights)]
-                print(f"[台阶回放] t={(step+1)*env.dt:.2f}s, phase={phase}; " + " | ".join(values), flush=True)
+                print(f"[台阶回放] t={(step+1)*env.dt:.2f}s, phase={phase}, target_vx={command[0]:.3f}m/s; " + " | ".join(values), flush=True)
             if imu_interval is not None and step % imu_interval == 0:
                 angles = flat.get_base_imu_angles_deg(env)
                 print(f"[IMU] t={(step+1)*env.dt:.2f}s; " + " | ".join(
