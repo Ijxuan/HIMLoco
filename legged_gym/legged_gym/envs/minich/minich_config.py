@@ -6,9 +6,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class env(LeggedRobotCfg.env):
         num_envs = 4096
-        num_one_step_observations = 45
+        stair_gait_clock = True
+        num_one_step_observations = 47
         num_observations = num_one_step_observations * 6
-        num_one_step_privileged_obs = 45 + 3 + 3 + 187
+        num_one_step_privileged_obs = num_one_step_observations + 3 + 3 + 187
         num_privileged_obs = num_one_step_privileged_obs
         num_actions = 12
         episode_length_s = 20
@@ -89,8 +90,11 @@ class MiniChRoughCfg(LeggedRobotCfg):
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
             swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.抬腿
-            stair_step = 0.1  # Per completed diagonal event, signed and bounded.
-            stair_step_overdue = -0.2  # Per second; saturates after twice the deadline.
+            stair_step = 0.0  # Legacy event scorer; periodic dense costs now teach the gait.
+            stair_step_overdue = 0.0
+            stair_gait_force = -0.4
+            stair_gait_height = -1.0
+            stair_gait_velocity = -0.1
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -108,7 +112,12 @@ class MiniChRoughCfg(LeggedRobotCfg):
             hip_mirror = -1.0
             hip_pos_penalty = -1.0
 
-        # Relative XY tracking during translation; keep the original near-zero branch.
+        # Dense periodic costs are averaged over four feet and integrated with dt.
+        stair_gait_frequency = 1.5  # Hz; independent of commanded translation.
+        stair_gait_duty_factor = 0.60  # Allows brief four-foot support at exchanges.
+        stair_gait_height = 0.035  # Local sole clearance, not world Z.
+        stair_gait_force_sigma = 25.0  # N, total foot contact-force norm.
+        stair_gait_velocity_sigma = 0.15  # m/s, world foot-speed norm.
         stair_step_on_deg = 5.0
         stair_step_off_deg = 3.0
         stair_step_linear_threshold = 0.1
@@ -122,6 +131,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         stair_step_max_air_time = 0.30
         stair_step_overdue_time = 0.70
 
+        # Relative XY tracking during translation; keep the original near-zero branch.
         relative_tracking_lin_vel = True
         tracking_lin_vel_sigma = 0.25  # Independent of angular tracking_sigma.
         tracking_lin_vel_min_speed = 0.3  # m/s; bound low-speed sensitivity.

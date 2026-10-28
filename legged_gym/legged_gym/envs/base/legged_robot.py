@@ -48,6 +48,7 @@ from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.step_clearance import StepClearance
 from legged_gym.utils.swing_peak_height import SwingPeakHeight
 from legged_gym.utils.stair_step import StairStep
+from legged_gym.utils.stair_gait import StairGait
 from legged_gym.utils.step_retraction import StepRetraction
 from legged_gym.utils.foot_vertical_force import FootVerticalForce
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
@@ -162,11 +163,14 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "step_clearance"):
             self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
                                        command_world, self._sample_step_heights)
-        if hasattr(self, "step_retraction") or hasattr(self, "swing_peak_height") or hasattr(self, "stair_step"):
+        if hasattr(self, "step_retraction") or hasattr(self, "swing_peak_height") or hasattr(self, "stair_step") or hasattr(self, "stair_gait"):
             sole = self.feet_pos[..., 2] - self.cfg.rewards.step_clearance_foot_radius
             ground = self._sample_step_heights(self.feet_pos[..., :2])
             support = ((sole - ground).abs() <= self.cfg.rewards.step_clearance_support_tolerance) & (
                 self.contact_forces[:, self.feet_indices, 2] > self.cfg.rewards.step_retraction_contact_force)
+        if hasattr(self, "stair_gait"):
+            self.stair_gait.update(self.orientation_target_normal, self.commands, sole - ground,
+                                   self.contact_forces[:, self.feet_indices], self.feet_vel)
         if hasattr(self, "stair_step"):
             self.stair_step.update(self.orientation_target_normal, self.commands, sole, ground, support)
         if hasattr(self, "swing_peak_height"):
@@ -262,6 +266,8 @@ class LeggedRobot(BaseTask):
             self.swing_peak_height.reset(env_ids)
         if hasattr(self, "stair_step"):
             self.stair_step.reset(env_ids)
+        if hasattr(self, "stair_gait"):
+            self.stair_gait.reset(env_ids)
         if hasattr(self, "long_stair_success"):
             self.long_stair_success[env_ids] = False
             self.long_stair_hold[env_ids] = 0.
@@ -301,6 +307,10 @@ class LeggedRobot(BaseTask):
         self.extras["episode"] = {}
         if long_stair_rate is not None:
             self.extras["episode"]["long_stairs_success"] = long_stair_rate
+        if hasattr(self, 'stair_gait'):
+            for name, values in self.stair_gait.stats.items():
+                self.extras['episode']['stair_gait/' + name] = values[env_ids].sum()
+                values[env_ids] = 0.
         if hasattr(self, 'stair_step'):
             for name, values in self.stair_step.stats.items():
                 self.extras['episode']['stair_step/' + name] = values[env_ids].sum()
@@ -404,6 +414,9 @@ class LeggedRobot(BaseTask):
         if self.add_noise:
             current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
 
+        if hasattr(self, "stair_gait"):
+            current_obs = torch.cat((current_obs, self.stair_gait.clock), dim=-1)
+
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
         if self.cfg.terrain.measure_heights:
@@ -433,6 +446,9 @@ class LeggedRobot(BaseTask):
         if self.add_noise:
             current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
 
+        if hasattr(self, "stair_gait"):
+            current_obs = torch.cat((current_obs, self.stair_gait.clock), dim=-1)
+
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
         if self.cfg.terrain.measure_heights:
@@ -455,6 +471,9 @@ class LeggedRobot(BaseTask):
         # add noise if needed
         if self.add_noise:
             current_obs += (2 * torch.rand_like(current_obs) - 1) * self.noise_scale_vec[0:(9 + 3 * self.num_actions)]
+
+        if hasattr(self, "stair_gait"):
+            current_obs = torch.cat((current_obs, self.stair_gait.clock), dim=-1)
 
         # add perceptive inputs if not blind
         current_obs = torch.cat((current_obs, self.base_lin_vel * self.obs_scales.lin_vel, self.disturbance[:, 0, :]), dim=-1)
@@ -1015,9 +1034,14 @@ class LeggedRobot(BaseTask):
         self.measured_heights = self._get_heights()
         if getattr(self.cfg.rewards, "terrain_relative_orientation", False):
             self._init_orientation_reference()
+        if getattr(self.cfg.env, "stair_gait_clock", False):
+            if not hasattr(self, "orientation_target_normal") or self.cfg.sim.physx.contact_collection == 0:
+                raise ValueError("stair_gait requires terrain orientation and contact collection")
+            self.stair_gait = StairGait(self.num_envs, self.feet_names, self.device, self.cfg.rewards, self.dt)
         if getattr(self.cfg.rewards.scales, "swing_peak_height", 0.) != 0.:
             self.swing_peak_height = SwingPeakHeight(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards, self.dt)
-        if any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("stair_step", "stair_step_overdue")):
+        if (getattr(self.cfg.env, "stair_gait_clock", False) or
+                any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("stair_step", "stair_step_overdue"))):
             if not hasattr(self, "orientation_target_normal") or self.cfg.sim.physx.contact_collection == 0:
                 raise ValueError("stair_step requires terrain-relative orientation and contact collection")
             self.stair_step = StairStep(self.num_envs, self.feet_names, self.device, self.cfg.rewards, self.dt)
@@ -1332,6 +1356,13 @@ class LeggedRobot(BaseTask):
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
+        clock = getattr(getattr(cfg, "env", None), "stair_gait_clock", False)
+        if clock and (cfg.env.num_one_step_observations != 47 or cfg.env.num_observations != 282
+                      or cfg.env.num_one_step_privileged_obs != 240 or cfg.env.num_privileged_obs != 240):
+            raise ValueError("stair_gait_clock requires 47-D actor frames, 282-D history, 240-D critic")
+        if not clock and any(getattr(getattr(getattr(cfg, "rewards", None), "scales", None), name, 0.) != 0. for name in
+                             ("stair_gait_force", "stair_gait_height", "stair_gait_velocity")):
+            raise ValueError("Periodic stair rewards require actor-visible stair_gait_clock")
         stair_probability = getattr(cfg.commands, "stair_step_stand_probability", 0.)
         if (not math.isfinite(stair_probability) or not 0 <= stair_probability <= 1
                 or (stair_probability > 0 and (not getattr(cfg.commands, "enable_turn_to_stand", False)
@@ -1923,6 +1954,15 @@ class LeggedRobot(BaseTask):
     def _reward_stand_still(self):
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
+    def _reward_stair_gait_force(self):
+        return self.stair_gait.force_cost
+
+    def _reward_stair_gait_height(self):
+        return self.stair_gait.height_cost
+
+    def _reward_stair_gait_velocity(self):
+        return self.stair_gait.velocity_cost
 
     def _reward_stair_step(self):
         return self.stair_step.score

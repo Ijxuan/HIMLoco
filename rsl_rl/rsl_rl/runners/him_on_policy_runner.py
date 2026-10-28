@@ -68,6 +68,8 @@ class HIMOnPolicyRunner:
                                                         self.env.num_one_step_obs,
                                                         self.env.num_actions,
                                                         **self.policy_cfg).to(self.device)
+        if hasattr(self.env, 'stair_gait'):
+            actor_critic.observation_contract = self.env.stair_gait.contract()
         alg_class = eval(self.cfg["algorithm_class_name"]) # HIMPPO
         self.alg: HIMPPO = alg_class(actor_critic, device=self.device, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
@@ -257,10 +259,19 @@ class HIMOnPolicyRunner:
             'estimator_optimizer_state_dict': self.alg.actor_critic.estimator.optimizer.state_dict(),
             'iter': self.current_learning_iteration,
             'infos': infos,
+            'observation_contract': getattr(self.alg.actor_critic, 'observation_contract', None),
             }, path)
 
     def load(self, path, load_optimizer=True):
         loaded_dict = torch.load(path)
+        frame_dim = loaded_dict['model_state_dict']['actor.0.weight'].shape[1] - 19
+        if frame_dim != self.env.num_one_step_obs:
+            raise ValueError(f'Checkpoint has {frame_dim}-D frames but environment expects '
+                             f'{self.env.num_one_step_obs}; clock-conditioned policies require new training, '
+                             'not padding a legacy checkpoint.')
+        expected = getattr(self.alg.actor_critic, 'observation_contract', None)
+        if expected is not None and loaded_dict.get('observation_contract') != expected:
+            raise ValueError('Checkpoint gait clock contract differs from environment configuration')
         self.alg.actor_critic.load_state_dict(loaded_dict['model_state_dict'])
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])

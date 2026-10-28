@@ -30,6 +30,7 @@
 
 import os
 import copy
+import json
 import torch
 import numpy as np
 import random
@@ -221,20 +222,29 @@ def export_policy_as_onnx(actor_critic, path, filename='policy.onnx'):
     import onnx
 
     if (not hasattr(actor_critic, 'estimator')
-            or actor_critic.num_actor_obs != 270
-            or actor_critic.num_one_step_obs != 45
+            or actor_critic.num_one_step_obs not in (45, 47)
+            or actor_critic.num_actor_obs != 6 * actor_critic.num_one_step_obs
             or actor_critic.num_actions != 12):
-        raise ValueError('Mini Cheetah ONNX export requires a 270 -> 12 HIM policy with 45-D frames')
+        raise ValueError('Mini Cheetah ONNX export requires six 45-D or 47-D HIM frames and 12 actions')
+    contract = getattr(actor_critic, 'observation_contract', None)
+    if actor_critic.num_one_step_obs == 47 and contract is None:
+        raise ValueError('47-D export requires the checkpoint-matched observation_contract')
     model = PolicyExporterHIM(actor_critic).cpu().eval()
     os.makedirs(path, exist_ok=True)
     output_path = os.path.join(path, filename)
     with torch.no_grad():
         torch.onnx.export(
-            model, torch.zeros(1, 270), output_path,
+            model, torch.zeros(1, actor_critic.num_actor_obs), output_path,
             export_params=True, opset_version=11, do_constant_folding=True,
             input_names=['obs'], output_names=['actions'],
         )
-    onnx.checker.check_model(output_path, full_check=True)
+    graph = onnx.load(output_path)
+    onnx.helper.set_model_props(graph, {
+        'observation_history': f'6 frames x {actor_critic.num_one_step_obs}, newest first',
+        'observation_contract': json.dumps(contract or {'version': 'minich_legacy_45'}),
+    })
+    onnx.checker.check_model(graph, full_check=True)
+    onnx.save(graph, output_path)
 
 
 # class PolicyExporterLSTM(torch.nn.Module):
@@ -272,12 +282,13 @@ class PolicyExporterHIM(torch.nn.Module):
         super().__init__()
         self.actor = copy.deepcopy(actor_critic.actor)
         self.estimator = copy.deepcopy(actor_critic.estimator.encoder)
+        self.frame_dim = actor_critic.num_one_step_obs
 
     def forward(self, obs_history):
         parts = self.estimator(obs_history)[:, 0:19]
         vel, z = parts[..., :3], parts[..., 3:]
         z = F.normalize(z, dim=-1, p=2.0)
-        return self.actor(torch.cat((obs_history[:, 0:45], vel, z), dim=1))
+        return self.actor(torch.cat((obs_history[:, :self.frame_dim], vel, z), dim=1))
 
     def export(self, path, filename='policy.jit'):
         os.makedirs(path, exist_ok=True)
