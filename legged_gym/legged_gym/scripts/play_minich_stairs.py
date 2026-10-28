@@ -25,7 +25,7 @@ from legged_gym.utils import get_args, task_registry
 #     ("latest", -1, -1),
 # )
 POLICY_SPECS = (
-    ("manual_1", -2, -1),#最右
+    ("manual_1", -1, -1),#最右
     ("manual_2", -1, -1),
     ("latest", -1, -1),
 )

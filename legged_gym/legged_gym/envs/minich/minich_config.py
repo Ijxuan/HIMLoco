@@ -32,6 +32,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         in_place_turn_duration_s = 10.0
         enable_turn_to_stand = True
         turn_to_stand_probability = 0.1
+        stair_step_stand_probability = 0.30  # At resampling on tilted terrain, hold zero 2-5 s.
 
         class ranges(LeggedRobotCfg.commands.ranges):
             lin_vel_x = [-1.0, 1.0]  # 前后速度，m/s
@@ -88,6 +89,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
             swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.抬腿
+            stair_step = 0.1  # Per completed diagonal event, signed and bounded.
+            stair_step_overdue = -0.2  # Per second; saturates after twice the deadline.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -106,6 +109,19 @@ class MiniChRoughCfg(LeggedRobotCfg):
             hip_pos_penalty = -1.0
 
         # Relative XY tracking during translation; keep the original near-zero branch.
+        stair_step_on_deg = 5.0
+        stair_step_off_deg = 3.0
+        stair_step_linear_threshold = 0.1
+        stair_step_yaw_threshold = 0.1
+        stair_step_min_height = 0.02
+        stair_step_target_height = 0.035
+        stair_step_max_height = 0.06
+        stair_step_sync_time = 0.08
+        stair_step_confirm_time = 0.04
+        stair_step_min_air_time = 0.20
+        stair_step_max_air_time = 0.30
+        stair_step_overdue_time = 0.70
+
         relative_tracking_lin_vel = True
         tracking_lin_vel_sigma = 0.25  # Independent of angular tracking_sigma.
         tracking_lin_vel_min_speed = 0.3  # m/s; bound low-speed sensitivity.

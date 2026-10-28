@@ -47,6 +47,7 @@ from legged_gym.envs.base.base_task import BaseTask
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.step_clearance import StepClearance
 from legged_gym.utils.swing_peak_height import SwingPeakHeight
+from legged_gym.utils.stair_step import StairStep
 from legged_gym.utils.step_retraction import StepRetraction
 from legged_gym.utils.foot_vertical_force import FootVerticalForce
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
@@ -161,11 +162,13 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "step_clearance"):
             self.step_clearance.update(self.feet_pos, self.contact_forces[:, self.feet_indices],
                                        command_world, self._sample_step_heights)
-        if hasattr(self, "step_retraction") or hasattr(self, "swing_peak_height"):
+        if hasattr(self, "step_retraction") or hasattr(self, "swing_peak_height") or hasattr(self, "stair_step"):
             sole = self.feet_pos[..., 2] - self.cfg.rewards.step_clearance_foot_radius
             ground = self._sample_step_heights(self.feet_pos[..., :2])
             support = ((sole - ground).abs() <= self.cfg.rewards.step_clearance_support_tolerance) & (
                 self.contact_forces[:, self.feet_indices, 2] > self.cfg.rewards.step_retraction_contact_force)
+        if hasattr(self, "stair_step"):
+            self.stair_step.update(self.orientation_target_normal, self.commands, sole, ground, support)
         if hasattr(self, "swing_peak_height"):
             enabled = (self._gait_training_mask()
                        & (self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
@@ -236,6 +239,9 @@ class LeggedRobot(BaseTask):
         self._reset_dofs(env_ids)
         self._reset_root_states(env_ids)
 
+        # The previous episode's terrain reference must not select a stair stop.
+        if hasattr(self, "orientation_reference_initialized"):
+            self.orientation_reference_initialized[env_ids] = False
         self._resample_commands(env_ids)
 
         # reset buffers
@@ -254,6 +260,8 @@ class LeggedRobot(BaseTask):
             self.step_retraction.reset(env_ids)
         if hasattr(self, "swing_peak_height"):
             self.swing_peak_height.reset(env_ids)
+        if hasattr(self, "stair_step"):
+            self.stair_step.reset(env_ids)
         if hasattr(self, "long_stair_success"):
             self.long_stair_success[env_ids] = False
             self.long_stair_hold[env_ids] = 0.
@@ -293,6 +301,10 @@ class LeggedRobot(BaseTask):
         self.extras["episode"] = {}
         if long_stair_rate is not None:
             self.extras["episode"]["long_stairs_success"] = long_stair_rate
+        if hasattr(self, 'stair_step'):
+            for name, values in self.stair_step.stats.items():
+                self.extras['episode']['stair_step/' + name] = values[env_ids].sum()
+                values[env_ids] = 0.
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids] / torch.clip(self.episode_length_buf[env_ids], min=1) / self.dt)
             self.episode_sums[key][env_ids] = 0.
@@ -708,6 +720,25 @@ class LeggedRobot(BaseTask):
             short_turn_ids = env_ids[short_turn]
             self.command_steps_remaining[short_turn_ids] = self._sample_command_duration(
                 len(short_turn_ids), self.turn_duration_steps)
+        self._sample_stair_stand_commands(env_ids)
+
+    def _sample_stair_stand_commands(self, env_ids):
+        probability = getattr(self.cfg.commands, "stair_step_stand_probability", 0.)
+        if probability == 0.:
+            return
+        if not 0. <= probability <= 1. or not getattr(self.cfg.commands, "enable_turn_to_stand", False):
+            raise ValueError("stair_step_stand_probability requires command stages and a probability in [0,1]")
+        normal = self.orientation_target_normal[env_ids]
+        angle = torch.atan2(normal[:, :2].norm(dim=1), normal[:, 2])
+        selected = ((angle > math.radians(self.cfg.rewards.stair_step_on_deg))
+                    & self.orientation_reference_initialized[env_ids]
+                    & (self.episode_length_buf[env_ids] > 0)
+                    & (torch.rand(len(env_ids), device=self.device) < probability))
+        ids = env_ids[selected]
+        self.commands[ids, :3] = 0.
+        self.in_place_turn_buf[ids] = False
+        self.command_stage[ids] = self.COMMAND_STAND
+        self.command_steps_remaining[ids] = self._sample_command_duration(len(ids), self.stand_duration_steps)
 
     def _sample_in_place_turn_yaw(self, count):
         """Uniformly sample the yaw range excluding the minimum-magnitude gap."""
@@ -986,6 +1017,10 @@ class LeggedRobot(BaseTask):
             self._init_orientation_reference()
         if getattr(self.cfg.rewards.scales, "swing_peak_height", 0.) != 0.:
             self.swing_peak_height = SwingPeakHeight(self.num_envs, len(self.feet_indices), self.device, self.cfg.rewards, self.dt)
+        if any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("stair_step", "stair_step_overdue")):
+            if not hasattr(self, "orientation_target_normal") or self.cfg.sim.physx.contact_collection == 0:
+                raise ValueError("stair_step requires terrain-relative orientation and contact collection")
+            self.stair_step = StairStep(self.num_envs, self.feet_names, self.device, self.cfg.rewards, self.dt)
         retraction_enabled = any(getattr(self.cfg.rewards.scales, name, 0.) != 0. for name in ("step_retraction", "step_retraction_stall"))
         if getattr(self.cfg.rewards.scales, "step_clearance", 0.) != 0.:
             if self.cfg.terrain.mesh_type not in ("plane", "heightfield", "trimesh"):
@@ -1297,6 +1332,11 @@ class LeggedRobot(BaseTask):
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
+        stair_probability = getattr(cfg.commands, "stair_step_stand_probability", 0.)
+        if (not math.isfinite(stair_probability) or not 0 <= stair_probability <= 1
+                or (stair_probability > 0 and (not getattr(cfg.commands, "enable_turn_to_stand", False)
+                    or not getattr(cfg.rewards, "terrain_relative_orientation", False)))):
+            raise ValueError("stair_step_stand_probability requires terrain orientation, command stages and probability in [0,1]")
         if getattr(cfg.commands, "enable_turn_to_stand", False):
             if not math.isfinite(self.dt) or self.dt <= 0:
                 raise ValueError("Policy step duration must be finite and positive")
@@ -1883,6 +1923,12 @@ class LeggedRobot(BaseTask):
     def _reward_stand_still(self):
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
+    def _reward_stair_step(self):
+        return self.stair_step.score
+
+    def _reward_stair_step_overdue(self):
+        return self.stair_step.overdue
 
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
