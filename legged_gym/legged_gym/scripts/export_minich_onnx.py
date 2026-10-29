@@ -47,7 +47,8 @@ def main():
     if frame_dim not in (45, 47) or history_dim != frame_dim * 6:
         raise ValueError('Expected six 45-D or 47-D Mini Cheetah HIM frames')
     contract = saved.get('observation_contract')
-    if frame_dim == 47 and (not contract or contract.get('version') != 'minich_stair_clock_v1'
+    if frame_dim == 47 and (not contract or contract.get('version') not in
+                            ('minich_stair_clock_v1', 'minich_stair_clock_v2')
                             or contract.get('frame_dim') != 47):
         raise ValueError('Clock policy requires checkpoint-matched observation_contract')
     reference = HIMActorCritic(history_dim, critic_dim, frame_dim, 12, activation="elu").cpu().eval()

@@ -25,7 +25,7 @@ class TestStairGait(unittest.TestCase):
     def test_invalid_clock_settings_are_rejected(self):
         cfg=SimpleNamespace(**{k:getattr(MiniChRoughCfg.rewards,k) for k in dir(MiniChRoughCfg.rewards) if k.startswith('stair_')})
         for name,value in [('stair_gait_frequency',0.),('stair_gait_duty_factor',1.),
-                           ('stair_gait_height',float('nan')),('stair_step_linear_threshold',float('inf'))]:
+                           ('stair_gait_height',float('nan')),('stair_step_on_deg',float('inf'))]:
             bad=copy.copy(cfg);setattr(bad,name,value)
             with self.assertRaises(ValueError):
                 StairGait(3,['FL_foot','FR_foot','RL_foot','RR_foot'],'cpu',bad,.02)
@@ -40,18 +40,36 @@ class TestStairGait(unittest.TestCase):
             torch.testing.assert_close(g.clock[:,0],torch.full((3,),math.sin(2*math.pi*expected)),atol=2e-5,rtol=0)
         self.assertTrue(g.enabled.all())
 
-    def test_hysteresis_and_command_gates(self):
+    def test_hysteresis_and_flat_deactivation(self):
         g=self.make();x=list(self.inputs())
         for deg, enabled in [(4,False),(6,True),(4,True),(2,False),(4,False)]:
             x[0][:]=torch.tensor([math.sin(math.radians(deg)),0,math.cos(math.radians(deg))])
             g.update(*x);self.assertEqual(g.enabled.all().item(),enabled)
             if not enabled:self.assertEqual(g.clock.abs().sum(),0)
         x[0][:]=torch.tensor([.2,0.,1.]);g.update(*x)
-        for axis in range(3):
-            x[1].zero_();x[1][:,axis]=.11;g.update(*x)
-            self.assertFalse(g.enabled.any());self.assertEqual(g.height_cost.sum(),0)
-        x[1].zero_();g.update(*x)
         self.assertEqual(g.phase.sum(),0)
+
+    def test_stair_clock_continues_across_translation_turn_and_stop(self):
+        g=self.make();x=list(self.inputs());g.update(*x)
+        for _ in range(10):g.update(*x)  # Reach mid-swing before command changes.
+        for commands in ([[.5,0.,0.],[-.5,0.,0.],[0.,.5,0.]],
+                         [[0.,0.,1.],[0.,0.,-1.],[.4,.2,.6]],
+                         [[0.,0.,0.]]*3):
+            before=g.phase.clone();target=g.targets()[1].clone()
+            x[1][:]=torch.tensor(commands);x[3].fill_(50.);x[4].fill_(1.)
+            g.update(*x)
+            self.assertTrue(g.enabled.all())
+            torch.testing.assert_close(g.phase,torch.remainder(before+.03,1.))
+            torch.testing.assert_close(g.target_height,target)
+            self.assertTrue((g.height_cost>0).all())
+            self.assertTrue((g.force_cost>0).all())
+            self.assertTrue((g.velocity_cost>0).all())
+        x[0][:]=torch.tensor([0.,0.,1.]);g.update(*x)
+        self.assertFalse(g.enabled.any())
+        for value in (g.clock,g.phase,g.force_cost,g.height_cost,g.velocity_cost):
+            self.assertEqual(value.abs().sum(),0)
+        x[1].fill_(.5);g.update(*x)
+        self.assertFalse(g.enabled.any())  # Flat locomotion uses normal tracking.
 
     def test_named_diagonals_and_double_support(self):
         g=self.make();g.phase[:]=.3
@@ -85,6 +103,68 @@ class TestStairGait(unittest.TestCase):
         g.reset(torch.tensor([1]));self.assertEqual(g.clock[1].abs().sum(),0)
         torch.testing.assert_close(g.phase[[0,2]],before[[0,2]])
         g.update(*x);self.assertEqual(g.phase[1],0)
+
+    def test_pair_deficit_requires_both_named_partners(self):
+        # Deliberately shuffled asset order: FR, RL, RR, FL.
+        g=self.make();x=list(self.inputs());g.update(*x)
+        for phase,pair in [(.3,(0,1)),(.8,(2,3))]:
+            g.phase[:]=phase;target=g.targets()[1].clone()
+            x[2].zero_();x[3].fill_(1000.)
+            # Env 0: both partners good; env 1: only one; env 2: neither.
+            x[2][0,list(pair)]=target[0,list(pair)];x[3][0,list(pair)]=0
+            x[2][1,pair[0]]=target[1,pair[0]];x[3][1,pair[0]]=0
+            g.update(*x)
+            torch.testing.assert_close(g.pair_deficit_cost,torch.tensor([0.,1.,1.]),atol=1e-6,rtol=0)
+            # Over-lifting the good foot cannot offset the missing partner.
+            g.phase[:]=phase;x[2][1,pair[0]]=1.
+            g.update(*x);self.assertAlmostEqual(g.pair_deficit_cost[1].item(),1.,places=6)
+            # The missing foot must both lift and unload.
+            g.phase[:]=phase;x[2][1,pair[1]]=target[1,pair[1]]
+            g.update(*x);self.assertAlmostEqual(g.pair_deficit_cost[1].item(),.5,places=6)
+            g.phase[:]=phase;x[3][1,pair[1]]=0
+            g.update(*x);self.assertLess(g.pair_deficit_cost[1].item(),1e-10)
+
+    def test_pair_deficit_gating_reset_and_logged_integral(self):
+        g=self.make();x=list(self.inputs());x[3].fill_(1000.)
+        g.update(*x);self.assertEqual(g.pair_deficit_cost.sum(),0)  # Unobserved activation.
+        g.phase[:]=.3;g.update(*x)
+        torch.testing.assert_close(g.pair_deficit_cost,torch.ones(3),atol=1e-6,rtol=0)
+        torch.testing.assert_close(g.stats['pair_deficit_cost_integral'],torch.full((3,),.02),atol=1e-6,rtol=0)
+        g.reset(torch.tensor([1]));self.assertEqual(g.pair_deficit_cost[1],0)
+        self.assertGreater(g.pair_deficit_cost[0],0)
+        g.phase[:]=.05;g.update(*x);self.assertEqual(g.pair_deficit_cost.sum(),0)  # Double support.
+        g.phase[:]=.3;x[0][:]=torch.tensor([0.,0.,1.]);g.update(*x)
+        self.assertEqual(g.pair_deficit_cost.sum(),0)
+
+    def test_pair_deficit_integral_and_existing_costs(self):
+        totals=[]
+        for dt in [.01,.02]:
+            g=self.make(dt);x=list(self.inputs());x[3][:,:,2]=50;g.update(*x)
+            total=0.
+            for _ in range(round(2/dt)):
+                swing,height=g.targets();g.update(*x)
+                # The additional term must not alter existing reward terms.
+                expected_height=(swing*(height/.035).square().clamp(max=1.)).mean(-1)
+                torch.testing.assert_close(g.height_cost,expected_height)
+                expected_force=(swing*(1-torch.exp(-x[3].square().sum(-1)/25**2))).mean(-1)
+                torch.testing.assert_close(g.force_cost,expected_force)
+                self.assertTrue(((g.pair_deficit_cost>=0)&(g.pair_deficit_cost<=1+1e-6)).all())
+                total+=g.pair_deficit_cost[0].item()*dt
+            self.assertAlmostEqual(g.stats['pair_deficit_cost_integral'][0].item(),total,places=5)
+            totals.append(total)
+        self.assertAlmostEqual(*totals,places=4)
+
+    def test_pair_reward_wiring_and_requires_clock(self):
+        from legged_gym.envs.base.legged_robot import LeggedRobot
+        g=self.make();g.pair_deficit_cost[:]=torch.tensor([.1,.2,.3])
+        r=SimpleNamespace(stair_gait=g)
+        torch.testing.assert_close(LeggedRobot._reward_stair_gait_pair_deficit(r),g.pair_deficit_cost)
+        cfg=SimpleNamespace(control=SimpleNamespace(decimation=4),
+                            env=SimpleNamespace(stair_gait_clock=False),
+                            rewards=SimpleNamespace(scales=SimpleNamespace(stair_gait_pair_deficit=-.4)))
+        r=SimpleNamespace(cfg=cfg,sim_params=SimpleNamespace(dt=.005))
+        with self.assertRaisesRegex(ValueError,'actor-visible'):
+            LeggedRobot._parse_cfg(r,cfg)
 
     def test_period_integral_not_dt_dependent(self):
         totals=[]
@@ -145,6 +225,9 @@ class TestStairGait(unittest.TestCase):
             torch.save(saved,path)
             with self.assertRaisesRegex(ValueError,'contract'):runner.load(path,load_optimizer=False)
             saved['observation_contract']=dict(policy.observation_contract,frequency_hz=2.)
+            torch.save(saved,path)
+            with self.assertRaisesRegex(ValueError,'contract'):runner.load(path,load_optimizer=False)
+            saved['observation_contract']=dict(policy.observation_contract,version='minich_stair_clock_v1')
             torch.save(saved,path)
             with self.assertRaisesRegex(ValueError,'contract'):runner.load(path,load_optimizer=False)
             saved['observation_contract']=policy.observation_contract

@@ -1361,7 +1361,8 @@ class LeggedRobot(BaseTask):
                       or cfg.env.num_one_step_privileged_obs != 240 or cfg.env.num_privileged_obs != 240):
             raise ValueError("stair_gait_clock requires 47-D actor frames, 282-D history, 240-D critic")
         if not clock and any(getattr(getattr(getattr(cfg, "rewards", None), "scales", None), name, 0.) != 0. for name in
-                             ("stair_gait_force", "stair_gait_height", "stair_gait_velocity")):
+                             ("stair_gait_force", "stair_gait_height", "stair_gait_velocity",
+                              "stair_gait_pair_deficit")):
             raise ValueError("Periodic stair rewards require actor-visible stair_gait_clock")
         stair_probability = getattr(cfg.commands, "stair_step_stand_probability", 0.)
         if (not math.isfinite(stair_probability) or not 0 <= stair_probability <= 1
@@ -1963,6 +1964,9 @@ class LeggedRobot(BaseTask):
 
     def _reward_stair_gait_velocity(self):
         return self.stair_gait.velocity_cost
+
+    def _reward_stair_gait_pair_deficit(self):
+        return self.stair_gait.pair_deficit_cost
 
     def _reward_stair_step(self):
         return self.stair_step.score

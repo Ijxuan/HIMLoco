@@ -95,6 +95,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             stair_gait_force = -0.4
             stair_gait_height = -1.0
             stair_gait_velocity = -0.1
+            stair_gait_pair_deficit = -0.4  # Candidate weight: worst-foot deficit per diagonal.
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
@@ -112,7 +113,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             hip_mirror = -1.0
             hip_pos_penalty = -1.0
 
-        # Dense periodic costs are averaged over four feet and integrated with dt.
+        # Existing dense costs average four feet; pair deficit sums two groups.
+        # All costs are integrated with dt by the reward framework.
+        # Clock/costs run on tilted terrain at ALL commands, including zero/yaw.
+        # Flat terrain disables this clock; normal velocity tracking remains.
         stair_gait_frequency = 1.5  # Hz; independent of commanded translation.
         stair_gait_duty_factor = 0.60  # Allows brief four-foot support at exchanges.
         stair_gait_height = 0.035  # Local sole clearance, not world Z.
@@ -120,6 +124,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         stair_gait_velocity_sigma = 0.15  # m/s, world foot-speed norm.
         stair_step_on_deg = 5.0
         stair_step_off_deg = 3.0
+        # Legacy zero-command event diagnostics only; NOT stair_gait gates.
         stair_step_linear_threshold = 0.1
         stair_step_yaw_threshold = 0.1
         stair_step_min_height = 0.02
