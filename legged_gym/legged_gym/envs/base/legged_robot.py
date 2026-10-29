@@ -292,7 +292,9 @@ class LeggedRobot(BaseTask):
 
         # update height measurements
         if self.cfg.terrain.measure_heights:
-            self.measured_heights = self._get_heights()
+            # The callback already sampled all running environments this step.
+            # Only reset roots moved since then.
+            self.measured_heights[env_ids] = self._get_heights(env_ids)
         
          #reset randomized prop
         if self.cfg.domain_rand.randomize_kp:
@@ -549,12 +551,16 @@ class LeggedRobot(BaseTask):
         if self.cfg.domain_rand.randomize_restitution:
             self.restitution_coeffs[env_ids] = torch_rand_float(self.cfg.domain_rand.restitution_range[0], self.cfg.domain_rand.restitution_range[1], (len(env_ids), 1), device=self.device)
         
-        for env_id in env_ids:
+        # Gym's property API is CPU-only. Transfer once per reset batch rather
+        # than synchronizing CUDA for every environment and collision shape.
+        coefficients = torch.cat((self.friction_coeffs[env_ids],
+                                  self.restitution_coeffs[env_ids]), dim=1).cpu().tolist()
+        for env_id, (friction, restitution) in zip(env_ids.cpu().tolist(), coefficients):
             rigid_shape_props = self.gym.get_actor_rigid_shape_properties(self.envs[env_id], 0)
 
             for i in range(len(rigid_shape_props)):
-                rigid_shape_props[i].friction = self.friction_coeffs[env_id, 0]
-                rigid_shape_props[i].restitution = self.restitution_coeffs[env_id, 0]
+                rigid_shape_props[i].friction = friction
+                rigid_shape_props[i].restitution = restitution
 
             self.gym.set_actor_rigid_shape_properties(self.envs[env_id], 0, rigid_shape_props)
 
@@ -1466,12 +1472,13 @@ class LeggedRobot(BaseTask):
         Returns:
             [type]: [description]
         """
+        num_envs = self.num_envs if env_ids is None else len(env_ids)
         if self.cfg.terrain.mesh_type == 'plane':
-            return torch.zeros(self.num_envs, self.num_height_points, device=self.device, requires_grad=False)
+            return torch.zeros(num_envs, self.num_height_points, device=self.device, requires_grad=False)
         elif self.cfg.terrain.mesh_type == 'none':
             raise NameError("Can't measure height with terrain mesh type 'none'")
 
-        if env_ids:
+        if env_ids is not None:
             points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
         else:
             points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (self.root_states[:, :3]).unsqueeze(1)
@@ -1490,7 +1497,7 @@ class LeggedRobot(BaseTask):
         heights = torch.min(heights1, heights2)
         heights = torch.min(heights, heights3)
 
-        return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+        return heights.view(num_envs, self.num_height_points) * self.terrain.cfg.vertical_scale
     
     def _get_base_heights(self, env_ids=None):
         """ Samples heights of the terrain at required points around each robot.
