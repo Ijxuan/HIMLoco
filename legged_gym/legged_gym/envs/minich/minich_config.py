@@ -92,10 +92,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.抬腿
             stair_step = 0.0  # Legacy event scorer; periodic dense costs now teach the gait.
             stair_step_overdue = 0.0
-            stair_gait_force = -0.4
-            stair_gait_height = -1.0
-            stair_gait_velocity = -0.1
-            stair_gait_pair_deficit = -0.4  # Candidate weight: worst-foot deficit per diagonal.
+            stair_gait_force = -0.10  # 建议起点 -0.10，待验证范围 [-0.16, -0.08]。
+            stair_gait_height = -0.25  # 建议起点 -0.25，待验证范围 [-0.40, -0.20]。
+            stair_gait_velocity = -0.025  # 建议起点 -0.025，待验证范围 [-0.04, -0.02]。
+            stair_gait_pair_deficit = -0.10  # 对角组取较差脚缺额；建议起点 -0.10，待验证范围 [-0.16, -0.08]。
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
