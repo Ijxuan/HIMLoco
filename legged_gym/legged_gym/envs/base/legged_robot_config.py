@@ -169,6 +169,7 @@ class LeggedRobotCfg(BaseConfig):
 
     class rewards:
         class scales:
+            com_foot_center = 0.0  # Squared horizontal COM-to-four-foot-center excess.
             termination = -0.0
             tracking_lin_vel = 1.0
             tracking_ang_vel = 0.5

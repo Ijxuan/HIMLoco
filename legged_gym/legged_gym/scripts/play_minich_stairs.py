@@ -40,8 +40,8 @@ CALF_KP = 24.0
 CALF_KD = 0.8
 # 前进目标速度：平均值 ± 波动幅度；默认范围 0.4～0.6 m/s。
 # 平均值是波形中心/完整周期均值，不含前后站立阶段。
-FORWARD_SPEED_MEAN_M_S = 0.4
-FORWARD_SPEED_AMPLITUDE_M_S = 0.4  # 半幅；设为 0 可恢复恒速。
+FORWARD_SPEED_MEAN_M_S = 0.5
+FORWARD_SPEED_AMPLITUDE_M_S = 0  # 半幅；设为 0 可恢复恒速。
 FORWARD_SPEED_RATE_M_S2 = 0.4  # 线性上升/下降斜率的绝对值。
 FORWARD_SPEED_WAVEFORM = "linear"  # 当前支持 linear（三角波）；后续可扩展 sine。
 STAND_BEFORE_S = 3.0

@@ -86,7 +86,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
             joint_power = -2e-5
             foot_vertical_force = -1e-4  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
             base_height = -30.0
-            step_retraction = 0.1  # Signed per-foot event budget, maximum at 1 cm.后摆
+            com_foot_center = 0.0  # -100   m^-2: 4 cm offset costs 0.04/s before total-reward clipping.
+            step_retraction = 0.15  # Only gait-training group; per-foot/swing budget, maximum at 1 cm.后摆
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
             swing_peak_height = 0.1  # Per foot/swing, only the gait-training group.抬腿
@@ -112,6 +113,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             raibert_heuristic = -10.0
             hip_mirror = -1.0
             hip_pos_penalty = -1.0
+
+        # World-horizontal distance from base-link COM to the mean of ALL four
+        # foot XY positions (including swing feet); active on all terrain/commands.
+        com_foot_center_deadband = 0.02  # m; cost = max(distance - deadband, 0)^2.
 
         # Existing dense costs average four feet; pair deficit sums two groups.
         # All costs are integrated with dt by the reward framework.
@@ -144,8 +149,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
 
         # Training-only swing/edge rewards; actor/export inputs stay unchanged.
-        # Straight swings: 0.5--1.5 cm; subtract cumulative reverse body travel.
-        step_retraction_distance = 0.005  # Minimum effective retraction.
+        # Straight swings: 0--1.5 cm, optimum 1 cm; subtract cumulative reverse body travel.
+        step_retraction_distance = 0.0  # Zero score at no effective retraction.
         step_retraction_target_distance = 0.010
         step_retraction_max_distance = 0.015  # Maximum WORLD retraction.
         step_retraction_reference_time = 0.30

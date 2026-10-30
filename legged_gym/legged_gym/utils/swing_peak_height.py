@@ -5,11 +5,12 @@ import torch
 
 def peak_height_score(height, lower=0.025, upper=0.08, target=0.05):
     """Bounded asymmetric curve: zero at bounds, +1 at the target."""
-    if not 0 < lower < target < upper:
-        raise ValueError('Expected 0 < lower < target < upper')
+    if not 0 <= lower < target < upper:
+        raise ValueError('Expected 0 <= lower < target < upper')
     width = torch.where(height <= target, target - lower, upper - target)
     inside = 1 - ((height - target) / width).square()
-    below = -((lower - height) / lower).clamp(0, 1).square()
+    # Zero is a valid lower bound for nonnegative retraction peaks.
+    below = -((lower - height) / lower).clamp(0, 1).square() if lower > 0 else -torch.ones_like(height)
     above = -((height - upper) / (upper - target)).clamp(0, 1).square()
     return torch.where(height < lower, below, torch.where(height > upper, above, inside))
 
