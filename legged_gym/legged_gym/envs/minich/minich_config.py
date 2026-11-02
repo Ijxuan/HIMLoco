@@ -84,7 +84,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
             orientation = -1.2  # Terrain-relative angular cost; retune after training.
             dof_acc = -2.5e-7
             joint_power = -2e-5
-            foot_vertical_force = -1e-4  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
+            foot_vertical_force = 0  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
             base_height = -30.0
             com_foot_center = 0.0  # -100   m^-2: 4 cm offset costs 0.04/s before total-reward clipping.
             step_retraction = 0.15  # Only gait-training group; per-foot/swing budget, maximum at 1 cm.后摆
