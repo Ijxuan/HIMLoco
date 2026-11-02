@@ -46,6 +46,22 @@ def collect():
     checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
     cfg, train_cfg = task_registry.get_cfgs("minich")
     flat.configure_flat_sequence_env(cfg)
+    saved = torch.load(str(checkpoint), map_location="cpu")
+    state = saved["model_state_dict"]
+    frame_dim = state["actor.0.weight"].shape[1] - 19
+    history_dim = state["estimator.encoder.0.weight"].shape[1]
+    if frame_dim not in (45, 47) or history_dim != 6 * frame_dim:
+        raise ValueError("Unsupported HIM observation dimensions")
+    if frame_dim == 45:
+        if saved.get("observation_contract") is not None:
+            raise ValueError("Unexpected clock contract on legacy checkpoint")
+        cfg.env.stair_gait_clock = False
+        cfg.env.num_one_step_observations = 45
+        cfg.env.num_observations = 270
+        cfg.env.num_one_step_privileged_obs = 238
+        cfg.env.num_privileged_obs = 238
+        for name in ("stair_gait_force", "stair_gait_height", "stair_gait_velocity", "stair_gait_pair_deficit"):
+            setattr(cfg.rewards.scales, name, 0.)
     cfg.env.num_envs = args.num_envs
     cfg.env.episode_length_s = args.seconds + 5
     cfg.rewards.log_phase_rewards = False
@@ -101,6 +117,11 @@ def collect():
 
     task_registry.register("minich_terrain_tsne", TerrainRobot, cfg, train_cfg)
     env, _ = task_registry.make_env("minich_terrain_tsne", args=args, env_cfg=cfg)
+    if not (env.sim_params.physx.use_gpu and env.sim_params.use_gpu_pipeline
+            and str(env.device).startswith("cuda") and env.viewer is None):
+        raise RuntimeError("Collection requires GPU PhysX, GPU pipeline and headless CUDA")
+    if frame_dim == 47 and saved.get("observation_contract") != env.stair_gait.contract():
+        raise ValueError("Checkpoint gait clock contract differs from collection configuration")
     flat.install_fixed_reset(env)
     fixed_dof_reset = env._reset_dofs
 
@@ -114,7 +135,6 @@ def collect():
     env._reset_dofs = MethodType(jittered_dof_reset, env)
     policy = HIMActorCritic(cfg.env.num_observations, cfg.env.num_privileged_obs,
         cfg.env.num_one_step_observations, cfg.env.num_actions, **class_to_dict(train_cfg.policy)).to(env.device)
-    saved = torch.load(str(checkpoint), map_location=env.device)
     policy.load_state_dict(saved["model_state_dict"], strict=True)
     del saved
     policy.eval()
@@ -171,6 +191,7 @@ def collect():
             terrain_parameters=dict(start_x=1., sample_x=[1.6, 6.], slope=.12, stair_height=.04,
                                     stair_depth=.30, rough_max_abs_height=.025),
             initial_joint_jitter_rad=.015,
+            observation_dimensions=dict(frame=frame_dim, history=history_dim),
             limitations=["One checkpoint, synthetic mild terrains, two replicas per terrain.",
                          "Latent mixes terrain response, posture and motion; coloring is ground truth.",
                          "Samples exclude reset, fallen robots, boundaries and initial flat approach."])

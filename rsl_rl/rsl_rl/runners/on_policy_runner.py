@@ -40,6 +40,7 @@ from rsl_rl.algorithms import PPO
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 from rsl_rl.env import VecEnv
 from rsl_rl.utils.log_tags import episode_scalar_tag
+from rsl_rl.utils.console_log import compact_training_log
 
 
 class OnPolicyRunner:
@@ -212,7 +213,7 @@ class OnPolicyRunner:
                        f"""{'Total time:':>{pad}} {self.tot_time:.2f}s\n"""
                        f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] + 1) * (
                                locs['num_learning_iterations'] - locs['it']):.1f}s\n""")
-        print(log_string)
+        print(compact_training_log(log_string, width), flush=True)
 
     def save(self, path, infos=None):
         torch.save({

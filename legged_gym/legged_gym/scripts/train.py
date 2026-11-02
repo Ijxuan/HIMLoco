@@ -31,16 +31,54 @@
 import numpy as np
 import os
 import inspect
+import json
 from pathlib import Path
 from datetime import datetime
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import export_policy_as_jit, export_policy_as_onnx, get_args, task_registry
+from legged_gym.utils import class_to_dict, export_policy_as_jit, export_policy_as_onnx, get_args, task_registry
 import torch
 
 
 POLICY_EXPORT_INTERVAL = 1000
+
+
+def save_reward_weights(env, ppo_runner, task):
+    """Save runtime reward weights beside events, without TensorBoard tags."""
+    if ppo_runner.log_dir is None:
+        return
+    path = Path(ppo_runner.log_dir) / 'reward_weights.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # reward_scales is the active runtime dictionary, with zeros removed and
+    # control dt already applied by _prepare_reward_function().
+    snapshot = {
+        'recorded_at': datetime.now().astimezone().isoformat(),
+        'task': task,
+        'start_learning_iteration': ppo_runner.current_learning_iteration,
+        'sources': {
+            'training_entry': str(Path(__file__).resolve()),
+            'config': str(Path(inspect.getfile(type(env.cfg))).resolve()),
+            'environment': str(Path(inspect.getfile(env.compute_reward)).resolve()),
+            'runner': str(Path(inspect.getfile(ppo_runner.learn)).resolve()),
+        },
+        'policy_dt': env.dt,
+        'only_positive_rewards': env.cfg.rewards.only_positive_rewards,
+        'configured_scales': class_to_dict(env.cfg.rewards.scales),
+        'active_scales_before_dt': {
+            name: scale / env.dt for name, scale in env.reward_scales.items()
+        },
+        'active_scales_after_dt': dict(env.reward_scales),
+        'notes': {
+            'configured_scales': 'Runtime config, including disabled zero weights.',
+            'active_scales_before_dt': 'Active runtime weights divided by policy_dt.',
+            'active_scales_after_dt': 'Actual multipliers used by compute_reward.',
+        },
+    }
+    with path.open('x', encoding='utf-8') as stream:
+        json.dump(snapshot, stream, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+        stream.write('\n')
+    print(f'奖励权重已保存：{path}', flush=True)
 
 
 def print_training_code_status(env, ppo_runner, stage):
@@ -102,6 +140,7 @@ def train(args, headless=True):
     args.headless = headless
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
+    save_reward_weights(env, ppo_runner, args.task)
 
     remaining_iterations = train_cfg.runner.max_iterations
     init_at_random_ep_len = True
