@@ -8,15 +8,47 @@ from legged_gym.utils.step_retraction import StepRetraction
 
 class TestStepRetraction(unittest.TestCase):
     def setUp(self):
-        self.r = StepRetraction(2, 4, 'cpu', MiniChRoughCfg.rewards, .02)
+        # Pin the original nonzero-bound regression cases independently of defaults.
+        class LegacyBounds(MiniChRoughCfg.rewards):
+            step_retraction_distance = .005
+        self.r = StepRetraction(2, 4, 'cpu', LegacyBounds, .02)
         self.feet = torch.zeros(2, 4, 3)
         self.base = torch.zeros(2, 2)
         self.cmd = torch.tensor([[.5, 0., 0.], [.5, 0., 0.]])
         self.world = self.cmd[:, :2].clone()
         self.support = torch.ones(2, 4, dtype=torch.bool)
+        self.enabled_envs = None
 
     def update(self, n=1):
-        for _ in range(n):self.r.update(self.feet, self.cmd, self.world, self.support, self.base)
+        for _ in range(n):self.r.update(self.feet, self.cmd, self.world, self.support, self.base,
+                                      enabled_envs=self.enabled_envs)
+
+    def test_environment_mask_excludes_positive_and_negative_scores(self):
+        self.enabled_envs = torch.tensor([True, False])
+        for displacement in (-.01, 0.):
+            self.support.fill_(True);self.update(3)
+            self.support.zero_();self.update(2)
+            self.feet[..., 0] += displacement;self.update()
+            self.support.fill_(True);self.update(2)
+            self.assertEqual(self.r.progress_reward[1].item(), 0.)
+            self.assertEqual(self.r.stall_cost[1].item(), 0.)
+        self.assertTrue((self.r.stats['count'][0] == 2).all())
+        self.assertEqual(self.r.stats['count'][1].sum().item(), 0.)
+        self.assertTrue((self.r.stats['positive_sum'][0] > 0).all())
+        self.assertTrue((self.r.stats['negative_sum'][0] < 0).all())
+        self.assertEqual(self.r.stats['enabled_seconds'][1].sum().item(), 0.)
+
+    def test_disabling_environment_cancels_inflight_event(self):
+        self.trigger()
+        self.enabled_envs = torch.tensor([True, False])
+        self.feet[..., 0] = -.01;self.update()
+        self.support.fill_(True);self.update(2)
+        self.assertGreater(self.r.progress_reward[0].item(), 0.)
+        self.assertEqual(self.r.progress_reward[1].item(), 0.)
+        self.assertEqual(self.r.stall_cost[1].item(), 0.)
+        self.assertTrue((self.r.stage[1] == self.r.IDLE).all())
+        self.assertTrue((self.r.stats['cancelled'][1] == 1).all())
+        self.assertEqual(self.r.stats['count'][1].sum().item(), 0.)
 
     def arm(self):
         self.support.fill_(True);self.update(3)
@@ -240,5 +272,34 @@ class TestStepRetraction(unittest.TestCase):
     def test_landing_bonus_effective_config(self):
         self.assertGreater(MiniChRoughCfg.rewards.scales.step_retraction,0.)
         self.assertEqual(MiniChRoughCfg.rewards.scales.step_retraction_stall,0.)
+
+    def test_zero_lower_bound_landing_scores_and_finite_state(self):
+        self.assertEqual(MiniChRoughCfg.rewards.step_retraction_distance, 0.)
+        for distance, expected in [(0., 0.), (.005, .75), (.01, 1.), (.015, 0.), (.02, -1.)]:
+            with self.subTest(distance=distance):
+                self.setUp()
+                self.r = StepRetraction(2, 4, 'cpu', MiniChRoughCfg.rewards, .02)
+                self.arm(); self.support.zero_(); self.update(2)
+                self.feet[..., 0] = -distance; self.update(5)
+                self.assertEqual(self.r.progress_reward.sum(), 0.)
+                self.support.fill_(True); self.update(2)
+                torch.testing.assert_close(self.r.progress_reward * .02, torch.full((2,), 4 * expected), atol=1e-5, rtol=1e-5)
+                for value in vars(self.r).values():
+                    if isinstance(value, torch.Tensor):
+                        self.assertTrue(torch.isfinite(value).all())
+                self.update(5)
+                self.assertEqual(self.r.progress_reward.sum(), 0.)
+
+    def test_zero_lower_bound_timeout_remains_negative_once(self):
+        self.r = StepRetraction(2, 4, 'cpu', MiniChRoughCfg.rewards, .02)
+        self.arm(); self.support.zero_(); self.update(2)
+        self.feet[..., 0] = -.01
+        total = torch.zeros(2)
+        for _ in range(30):
+            self.update(); total += self.r.progress_reward * .02
+        torch.testing.assert_close(total, torch.full((2,), -4.))
+        self.support.fill_(True); self.update(2)
+        self.assertEqual(self.r.progress_reward.sum(), 0.)
+        self.assertTrue((self.r.stats['count'] == 1).all())
 
 if __name__=='__main__':unittest.main()

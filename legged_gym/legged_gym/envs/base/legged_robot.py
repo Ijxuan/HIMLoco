@@ -180,7 +180,7 @@ class LeggedRobot(BaseTask):
             self.swing_peak_height.update(sole - ground, support, self.commands, enabled)
         if hasattr(self, "step_retraction"):
             self.step_retraction.update(self.feet_pos, self.commands, command_world, support,
-                                        self.root_states[:, :2])
+                                        self.root_states[:, :2], enabled_envs=self._gait_training_mask())
             if hasattr(self, "step_clearance"):
                 self.step_clearance.per_foot_cost.masked_fill_(self.step_retraction.stage == StepRetraction.RETRACT, 0.)
                 self.step_clearance.cost[:] = self.step_clearance.per_foot_cost.sum(-1)
@@ -1250,6 +1250,7 @@ class LeggedRobot(BaseTask):
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
         self.envs = []
+        base_com_offsets = []
         
         self.payload = torch.zeros(self.num_envs, 1, dtype=torch.float, device=self.device, requires_grad=False)
         self.com_displacement = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
@@ -1278,9 +1279,14 @@ class LeggedRobot(BaseTask):
                     
             body_props = self._process_rigid_body_props(body_props, i)
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
+            # Cache the COM actually assigned at actor creation, including domain
+            # randomization. _init_buffers later resamples com_displacement.
+            com = body_props[0].com
+            base_com_offsets.append((com.x, com.y, com.z))
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
 
+        self.base_com_offset = torch.tensor(base_com_offsets, dtype=torch.float, device=self.device)
         self.feet_names = feet_names
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
@@ -1586,6 +1592,14 @@ class LeggedRobot(BaseTask):
         return feet_height
 
     #------------ reward functions----------------
+    def _reward_com_foot_center(self):
+        """Squared excess of base COM to all-foot mean distance in world XY."""
+        com_world = self.root_states[:, :3] + quat_apply(self.base_quat, self.base_com_offset)
+        foot_center_xy = self.feet_pos[:, :, :2].mean(dim=1)
+        distance = torch.norm(com_world[:, :2] - foot_center_xy, dim=1)
+        excess = (distance - self.cfg.rewards.com_foot_center_deadband).clamp(min=0.)
+        return excess.square()
+
     def _reward_hip_mirror(self):
         """Pairwise hip mirror error in radians, gated by in-place turn commands."""
         in_place_turn = (

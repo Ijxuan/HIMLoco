@@ -14,7 +14,7 @@ class StepRetraction:
                  'landing_confirm_time', 'contact_force', 'landing_penalty_time')
         for name in names:
             value = getattr(cfg, 'step_retraction_' + name)
-            if not math.isfinite(value) or value <= 0:
+            if not math.isfinite(value) or value < 0 or (value == 0 and name != 'distance'):
                 raise ValueError('Invalid step_retraction_' + name)
         if not math.isfinite(dt) or dt <= 0 or cfg.step_retraction_timeout < cfg.step_retraction_reference_time:
             raise ValueError('Invalid retraction timing')
@@ -63,13 +63,14 @@ class StepRetraction:
                       self.failed_landing, self.progress_reward, self.stall_cost):
             value[ids] = 0
 
-    def update(self, feet, commands, command_world_xy, support, base_xy):
+    def update(self, feet, commands, command_world_xy, support, base_xy, enabled_envs=None):
         """Update once per control step, with terrain-independent swing state.
 
         support identifies horizontal support, not merely a large vertical force
         (wall friction can also have a vertical component). The caller may use
         privileged terrain geometry for this TRAINING reward, never actor input.
         base_xy is the trunk root position in world coordinates, shape (N, 2).
+        enabled_envs optionally restricts scoring to selected environments (N,).
         """
         c = self.cfg
         xy = feet[..., :2]
@@ -78,6 +79,8 @@ class StepRetraction:
         input_direction = commands[:, :2] / commands[:, :2].norm(dim=-1, keepdim=True).clamp_min(1e-6)
         enabled = ((commands[:, 0].abs() >= c.step_retraction_min_forward_speed)
                    & (commands[:, 2].abs() < c.step_retraction_max_yaw_rate))[:, None]
+        if enabled_envs is not None:
+            enabled &= enabled_envs[:, None]
         self.started.zero_(); self.completed.zero_(); self.failed_landing.zero_()
         self.progress_reward.zero_(); self.stall_cost.zero_(); self.per_foot_lag_cost.zero_()
         # Turning, stopping or reversing cancels the old direction. Re-arming
@@ -152,7 +155,8 @@ class StepRetraction:
         self.completed[:] = unfinished & (self.best >= c.step_retraction_distance - 1e-6)
         self.stage[self.completed] = self.COMPLETE
         reference = c.step_retraction_distance * (self.elapsed / c.step_retraction_reference_time).clamp(0, 1)
-        lag = ((reference - signed) / c.step_retraction_distance).clamp(0, 1).square()
+        lag = (((reference - signed) / c.step_retraction_distance).clamp(0, 1).square()
+               if c.step_retraction_distance > 0 else torch.zeros_like(signed))
         self.per_foot_lag_cost[:] = lag * unfinished * ~self.completed
 
         self.landing_time[:] = torch.where(cycle & support, self.landing_time + self.dt,
@@ -160,7 +164,8 @@ class StepRetraction:
         landed = cycle & (self.landing_time + 1e-7 >= c.step_retraction_landing_confirm_time)
         self.failed_landing[:] = landed & ((self.stage != self.COMPLETE) | (self.over_cost > 0))
         # A brief swing cannot erase an incomplete task by touching down early.
-        deficit = (1 - self.best / c.step_retraction_distance).clamp(0, 1).square()
+        deficit = ((1 - self.best / c.step_retraction_distance).clamp(0, 1).square()
+                   if c.step_retraction_distance > 0 else torch.zeros_like(self.best))
         terminal = landed * (deficit + self.over_cost) * (c.step_retraction_landing_penalty_time / self.dt)
         self.stall_cost[:] = (self.per_foot_lag_cost + self.over_cost + terminal).sum(-1)
         # One signed event per swing. A timed-out foot cannot earn a second
