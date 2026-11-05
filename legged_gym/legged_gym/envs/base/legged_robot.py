@@ -174,12 +174,13 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "stair_step"):
             self.stair_step.update(self.orientation_target_normal, self.commands, sole, ground, support)
         if hasattr(self, "swing_peak_height"):
-            enabled = ((self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
+            enabled = (self._long_stair_reward_mask()
+                       & (self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
                        & (self.commands[:, 2].abs() < self.cfg.rewards.step_retraction_max_yaw_rate))
             self.swing_peak_height.update(sole - ground, support, self.commands, enabled)
         if hasattr(self, "step_retraction"):
             self.step_retraction.update(self.feet_pos, self.commands, command_world, support,
-                                        self.root_states[:, :2])
+                                        self.root_states[:, :2], enabled_envs=self._long_stair_reward_mask())
             if hasattr(self, "step_clearance"):
                 self.step_clearance.per_foot_cost.masked_fill_(self.step_retraction.stage == StepRetraction.RETRACT, 0.)
                 self.step_clearance.cost[:] = self.step_clearance.per_foot_cost.sum(-1)
@@ -1756,6 +1757,12 @@ class LeggedRobot(BaseTask):
         # approach direction. Custom playback meshes retain their own grid.
         edge_height = torch.minimum(torch.minimum(h00, h10), torch.minimum(h01, h11)) if isinstance(self.terrain, Terrain) else h00
         return torch.where(steep, edge_height, smooth)
+
+    def _long_stair_reward_mask(self):
+        """Only actual long-tread stairs; their introductory flat rows are excluded."""
+        if not hasattr(self, "long_stair_mask"):
+            return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        return self.long_stair_mask & (self.terrain_levels >= self.cfg.terrain.long_stairs_start_level)
 
     def _reward_step_retraction(self):
         return self.step_retraction.progress_reward

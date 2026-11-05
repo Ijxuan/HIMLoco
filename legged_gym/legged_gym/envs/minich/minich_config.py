@@ -87,10 +87,10 @@ class MiniChRoughCfg(LeggedRobotCfg):
             foot_vertical_force = 0  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
             base_height = -30.0
             com_foot_center = 0.0  # -100   m^-2: 4 cm offset costs 0.04/s before total-reward clipping.
-            step_retraction = 0.15  # All environments meeting command gates; per-foot/swing budget, maximum at 1 cm.后摆
+            step_retraction = 0.15  # Actual long-tread stairs + command gates; per-foot/swing, maximum at 1 cm.后摆
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
-            swing_peak_height = 0.1  # Per foot/swing, all environments meeting command gates.抬腿
+            swing_peak_height = 0.1  # Per foot/swing, actual long-tread stairs + command gates.抬腿
             stair_step = 0.0  # Legacy event scorer; periodic dense costs now teach the gait.
             stair_step_overdue = 0.0
             stair_gait_force = -0.10  # 建议起点 -0.10，待验证范围 [-0.16, -0.08]。
