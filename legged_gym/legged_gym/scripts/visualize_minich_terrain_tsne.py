@@ -33,9 +33,13 @@ def collect():
         {"name": "--episodes", "type": int, "default": 4},
         {"name": "--seconds", "type": float, "default": 9.},
         {"name": "--seed", "type": int, "default": 20261016},
+        {"name": "--stair-height", "type": float, "default": .04},
+        {"name": "--stair-depth", "type": float, "default": .30},
     ])
     if args.episodes < 4 or args.seconds < 5:
         raise ValueError("Use >=4 episodes and >=5 seconds for matched-speed holdout")
+    if not np.isfinite([args.stair_height, args.stair_depth]).all() or min(args.stair_height, args.stair_depth) <= 0:
+        raise ValueError("Stair dimensions must be finite and positive")
     args.sim_device = ("cuda:" + str(args.compute_device_id)) if args.sim_device_type == "cuda" else "cpu"
     args.num_envs = 12
     torch.set_num_threads(1)
@@ -100,7 +104,7 @@ def collect():
                 elif kind in (2, 3):
                     heights[:, iy] = ((1 if kind == 2 else -1) * .12 * distance)[:, None]
                 elif kind in (4, 5):
-                    profile = np.where(x >= 1., np.floor(distance / .30) + 1, 0.) * .04
+                    profile = np.where(x >= 1., np.floor(distance / args.stair_depth) + 1, 0.) * args.stair_height
                     heights[:, iy] = ((1 if kind == 4 else -1) * profile)[:, None]
             raw = np.rint(heights / v).astype(np.int16)
             vertices, triangles = terrain_utils.convert_heightfield_to_trimesh(raw, h, v, .75)
@@ -138,7 +142,7 @@ def collect():
     policy.load_state_dict(saved["model_state_dict"], strict=True)
     del saved
     policy.eval()
-    records = {key: [] for key in ("z", "label", "episode", "env_id", "time", "command", "velocity", "position")}
+    records = {key: [] for key in ("z", "label", "episode", "env_id", "time", "command", "velocity", "position", "foot_position", "foot_contact_force")}
     rollouts = []
     try:
         with torch.inference_mode():
@@ -164,7 +168,9 @@ def collect():
                                 episode=torch.full_like(ids, episode),
                                 time=torch.full((len(ids),), step * env.dt, device=env.device),
                                 command=env.commands[ids, :3], velocity=env.base_lin_vel[ids],
-                                position=env.root_states[ids, :3])
+                                position=env.root_states[ids, :3],
+                                foot_position=env.feet_pos[ids],
+                                foot_contact_force=env.contact_forces[ids][:, env.feet_indices])
                             for key, value in values.items():
                                 records[key].append(value.cpu().numpy().copy())
                     action = policy.act_inference(obs)
@@ -188,8 +194,9 @@ def collect():
             samples_per_terrain={name: int((data["label"] == i).sum()) for i, name in enumerate(NAMES)},
             rollouts=rollouts, config=class_to_dict(cfg),
             cuda_peak_allocated_mb=torch.cuda.max_memory_allocated() / 2**20 if torch.cuda.is_available() else 0,
-            terrain_parameters=dict(start_x=1., sample_x=[1.6, 6.], slope=.12, stair_height=.04,
-                                    stair_depth=.30, rough_max_abs_height=.025),
+            terrain_parameters=dict(start_x=1., sample_x=[1.6, 6.], slope=.12, stair_height=args.stair_height,
+                                    stair_depth=args.stair_depth, rough_max_abs_height=.025),
+            sampling_rule="Ground-truth lane label; time>2s, 1.6<body_x<6, lateral offset<0.8, upright cosine>0.85, base clearance>0.16, no earlier termination. No foot-contact or upward-progress gate.",
             initial_joint_jitter_rad=.015,
             observation_dimensions=dict(frame=frame_dim, history=history_dim),
             limitations=["One checkpoint, synthetic mild terrains, two replicas per terrain.",

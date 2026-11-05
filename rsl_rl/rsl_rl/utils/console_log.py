@@ -22,7 +22,13 @@ def compact_training_log(log_string, width=80, *, columns=None):
     progress = ""
     for line in log_string.splitlines():
         item = line.strip()
-        if not item or set(item) in ({"#"}, {"-"}):
+        if not item:
+            continue
+        if set(item) in ({"#"}, {"-"}):
+            if row:
+                lines.append(row)
+                row = ""
+            lines.append(item[0] * columns)
             continue
         if "Learning iteration " in item:
             progress = item

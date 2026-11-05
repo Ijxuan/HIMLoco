@@ -174,13 +174,12 @@ class LeggedRobot(BaseTask):
         if hasattr(self, "stair_step"):
             self.stair_step.update(self.orientation_target_normal, self.commands, sole, ground, support)
         if hasattr(self, "swing_peak_height"):
-            enabled = (self._gait_training_mask()
-                       & (self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
+            enabled = ((self.commands[:, 0].abs() >= self.cfg.rewards.step_retraction_min_forward_speed)
                        & (self.commands[:, 2].abs() < self.cfg.rewards.step_retraction_max_yaw_rate))
             self.swing_peak_height.update(sole - ground, support, self.commands, enabled)
         if hasattr(self, "step_retraction"):
             self.step_retraction.update(self.feet_pos, self.commands, command_world, support,
-                                        self.root_states[:, :2], enabled_envs=self._gait_training_mask())
+                                        self.root_states[:, :2])
             if hasattr(self, "step_clearance"):
                 self.step_clearance.per_foot_cost.masked_fill_(self.step_retraction.stage == StepRetraction.RETRACT, 0.)
                 self.step_clearance.cost[:] = self.step_clearance.per_foot_cost.sum(-1)
