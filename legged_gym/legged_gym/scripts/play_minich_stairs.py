@@ -25,9 +25,9 @@ from legged_gym.utils import get_args, task_registry
 #     ("latest", -1, -1),
 # )
 POLICY_SPECS = (
-    ("manual_1", -1, -1),#最右
-    ("manual_2", -1, -1),
-    ("latest", -1, -1),
+    ("manual_1", "Oct23_19-43-17_smoke_minich", 500),#最右
+    ("manual_2", "Oct23_19-43-17_smoke_minich", 500),
+    ("latest", "Oct23_19-43-17_smoke_minich", 500),
 )
 STAIR_START_X_M = 0.5
 STAIR_HEIGHT_M = 0.08
@@ -38,10 +38,11 @@ INITIAL_BASE_HEIGHT_M = flat.INITIAL_BASE_HEIGHT_M
 ACTION_SCALE = flat.ACTION_SCALE
 CALF_KP = 24.0
 CALF_KD = 0.8
+STAIR_GAIT_FREQUENCY_HZ = 2.0  # 仅回放覆盖；先按训练时的约定加载模型。
 # 前进目标速度：平均值 ± 波动幅度；默认范围 0.4～0.6 m/s。
 # 平均值是波形中心/完整周期均值，不含前后站立阶段。
 FORWARD_SPEED_MEAN_M_S = 0.5
-FORWARD_SPEED_AMPLITUDE_M_S = 0  # 半幅；设为 0 可恢复恒速。
+FORWARD_SPEED_AMPLITUDE_M_S = 0.5  # 半幅；设为 0 可恢复恒速。
 FORWARD_SPEED_RATE_M_S2 = 0.4  # 线性上升/下降斜率的绝对值。
 FORWARD_SPEED_WAVEFORM = "linear"  # 当前支持 linear（三角波）；后续可扩展 sine。
 STAND_BEFORE_S = 3.0
@@ -245,6 +246,9 @@ def play(args):
         flat.reset_to_fixed_state(env)
         flat.install_termination_override(env)
         policies = load_policies(env, args, train_cfg)
+        if hasattr(env, "stair_gait"):
+            env.stair_gait.cfg.stair_gait_frequency = STAIR_GAIT_FREQUENCY_HZ
+            print(f"楼梯回放步态频率: {STAIR_GAIT_FREQUENCY_HZ:g} Hz", flush=True)
         flat.reset_to_fixed_state(env)
         meter = flat.install_latest_policy_reward_meter(env)
         steps = int(round((STAND_BEFORE_S + FORWARD_S + STAND_AFTER_S) / env.dt))

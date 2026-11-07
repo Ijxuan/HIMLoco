@@ -6,8 +6,9 @@ class MiniChRoughCfg(LeggedRobotCfg):
 
     class env(LeggedRobotCfg.env):
         num_envs = 4096
-        stair_gait_clock = True
-        num_one_step_observations = 47
+        # 恢复历史策略输入：45 维单帧、6 帧历史，不附加楼梯相位。
+        stair_gait_clock = False
+        num_one_step_observations = 45
         num_observations = num_one_step_observations * 6
         num_one_step_privileged_obs = num_one_step_observations + 3 + 3 + 187
         num_privileged_obs = num_one_step_privileged_obs
@@ -33,7 +34,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         in_place_turn_duration_s = 10.0
         enable_turn_to_stand = True
         turn_to_stand_probability = 0.1
-        stair_step_stand_probability = 0.30  # At resampling on tilted terrain, hold zero 2-5 s.
+        stair_step_stand_probability = 0.0  # 关闭楼梯踏步专用的坡面停步采样。
 
         class ranges(LeggedRobotCfg.commands.ranges):
             lin_vel_x = [-1.0, 1.0]  # 前后速度，m/s
@@ -91,12 +92,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
             swing_peak_height = 0.1  # Per foot/swing, actual long-tread stairs + command gates.抬腿
-            stair_step = 0.0  # Legacy event scorer; periodic dense costs now teach the gait.
+            # 关闭楼梯原地踏步奖励，保留实现供显式启用时使用。
+            stair_step = 0.0
             stair_step_overdue = 0.0
-            stair_gait_force = -0.10  # 建议起点 -0.10，待验证范围 [-0.16, -0.08]。
-            stair_gait_height = -0.25  # 建议起点 -0.25，待验证范围 [-0.40, -0.20]。
-            stair_gait_velocity = -0.025  # 建议起点 -0.025，待验证范围 [-0.04, -0.02]。
-            stair_gait_pair_deficit = -0.10  # 对角组取较差脚缺额；建议起点 -0.10，待验证范围 [-0.16, -0.08]。
+            stair_gait_force = 0.0
+            stair_gait_height = 0.0
+            stair_gait_velocity = 0.0
+            stair_gait_pair_deficit = 0.0
             foot_clearance = 0
             action_rate = -0.01
             smoothness = -0.01
