@@ -176,7 +176,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         step_clearance_min_speed = 0.10
 
         swing_peak_height_min = 0.025
-        swing_peak_height_target = 0.05
+        swing_peak_height_target = 0.10
         swing_peak_height_max = 0.18  # Local clearance: zero at 18 cm, negative above.
         swing_peak_height_min_air_time = 0.08
         swing_peak_height_timeout = 0.50

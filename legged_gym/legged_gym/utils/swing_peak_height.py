@@ -3,7 +3,7 @@ import math
 import torch
 
 
-def peak_height_score(height, lower=0.025, upper=0.18, target=0.05):
+def peak_height_score(height, lower=0.025, upper=0.18, target=0.10):
     """Bounded asymmetric curve: zero at bounds, +1 at the target."""
     if not 0 <= lower < target < upper:
         raise ValueError('Expected 0 <= lower < target < upper')

@@ -28,47 +28,47 @@ class TestPeakHeight(unittest.TestCase):
         return credit
 
     def test_curve_sign_peak_continuity(self):
-        h=torch.tensor([0.,.0125,.025,.0375,.05,.115,.18,.245,.31])
+        h=torch.tensor([0.,.0125,.025,.0625,.10,.14,.18,.22,.26])
         expected=torch.tensor([-1.,-.25,0.,.75,1.,.75,0.,-.25,-1.])
         torch.testing.assert_close(peak_height_score(h),expected,atol=1e-6,rtol=1e-6)
-        for edge in [.025,.05,.18]:
+        for edge in [.025,.10,.18]:
             scores=peak_height_score(torch.tensor([edge-1e-7,edge,edge+1e-7]))
             self.assertLess((scores.max()-scores.min()).item(),1e-4)
 
     def test_once_per_swing_and_only_selected_envs(self):
-        total=self.swing(.05)
+        total=self.swing(.10)
         torch.testing.assert_close(total,torch.tensor([4.,0.]))
         self.assertEqual(self.step(20).sum(),0)
         self.assertEqual(self.r.stats['count'][0].sum(),4)
         self.assertEqual(self.r.stats['count'][1].sum(),0)
 
     def test_peak_not_landing_height(self):
-        self.step(3);self.contact.zero_();self.h[:]=.05;self.step(4)
+        self.step(3);self.contact.zero_();self.h[:]=.10;self.step(4)
         self.h.zero_();self.step();self.contact.fill_(True)
         torch.testing.assert_close(self.step(2),torch.tensor([4.,0.]))
 
     def test_overshoot_not_erased_by_lowering(self):
         self.step(3);self.contact.zero_();self.h[:]=.31;self.step(4)
-        self.h[:]=.05;self.step();self.contact.fill_(True)
+        self.h[:]=.10;self.step();self.contact.fill_(True)
         torch.testing.assert_close(self.step(2),torch.tensor([-4.,0.]))
 
     def test_underheight_negative(self):
         torch.testing.assert_close(self.swing(.0125),torch.tensor([-1.,0.]))
 
     def test_timeout_once_no_hanging_credit(self):
-        self.step(3);self.contact.zero_();self.h[:]=.05
+        self.step(3);self.contact.zero_();self.h[:]=.10
         torch.testing.assert_close(self.step(30),torch.tensor([-4.,0.]))
         self.assertEqual(self.step(50).sum(),0)
         self.assertEqual(self.r.stats['timeout'][0].sum(),4)
 
     def test_no_initial_airborne_or_stance_credit(self):
-        self.contact.zero_();self.h[:]=.05
+        self.contact.zero_();self.h[:]=.10
         self.assertEqual(self.step(50).sum(),0)
         self.contact.fill_(True)
         self.assertEqual(self.step(50).sum(),0)
 
     def test_short_dropout_cannot_earn_positive_reward(self):
-        self.step(3);self.contact.zero_();self.h[:]=.05;self.step()
+        self.step(3);self.contact.zero_();self.h[:]=.10;self.step()
         self.contact.fill_(True)
         self.assertEqual(self.step(2).sum(),0)
 
@@ -82,19 +82,19 @@ class TestPeakHeight(unittest.TestCase):
         self.assertEqual(self.r.peak.sum(),0)
 
     def test_reverse_command_cancels_old_cycle(self):
-        self.step(3);self.contact.zero_();self.h[:]=.05;self.step(4)
+        self.step(3);self.contact.zero_();self.h[:]=.10;self.step(4)
         self.cmd*=-1;self.step()
         self.assertFalse(self.r.active.any())
         self.assertEqual(self.step(30).sum(),0)
 
     def test_duration_invariant_event_budget(self):
         for n in [4,10,20]:
-            self.setUp();self.step(3);self.contact.zero_();self.h[:]=.05
+            self.setUp();self.step(3);self.contact.zero_();self.h[:]=.10
             total=self.step(n);self.contact.fill_(True);total+=self.step(2)
             torch.testing.assert_close(total,torch.tensor([4.,0.]))
 
     def test_independent_feet(self):
-        self.step(3);self.contact[:,0]=False;self.h[:,0]=.05;self.step(5)
+        self.step(3);self.contact[:,0]=False;self.h[:,0]=.10;self.step(5)
         self.contact.fill_(True)
         torch.testing.assert_close(self.step(2),torch.tensor([1.,0.]))
 
