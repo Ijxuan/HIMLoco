@@ -130,7 +130,7 @@ class Terrain:
                                 horizontal_scale=self.cfg.horizontal_scale)
         slope = difficulty * 0.4
         amplitude = 0.01 + 0.07 * difficulty
-        step_height = 0.05 + 0.18 * difficulty
+        step_height = 0.09 + 0.18 * difficulty  # Level 5: 0.18 m; each level is 0.04 m above the old curriculum.
         discrete_obstacles_height = 0.05 + difficulty * 0.1
         stepping_stones_size = 1.5 * (1.05 - difficulty)
         stone_distance = 0.05 if difficulty==0 else 0.1

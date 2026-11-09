@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-"""Three-policy Mini Cheetah playback on twenty exact 8 cm / 20 cm stairs.
+"""Three-policy Mini Cheetah playback on twenty exact 15 cm / 20 cm stairs.
 
 From this directory:
     conda activate gym4
@@ -19,18 +19,19 @@ from legged_gym.envs.base.legged_robot import LeggedRobot
 from legged_gym.utils import get_args, task_registry
 
 # Same selection as the flat viewer. Each network controls one robot only.
-# POLICY_SPECS = (
-#     ("manual_1", "Sep11_10-19-10_smoke_minich", 1000),
-#     ("manual_2", -2, -1),
-#     ("latest", -1, -1),
-# )
+
 POLICY_SPECS = (
-    ("manual_1", "Oct23_19-43-17_smoke_minich", 500),#最右
-    ("manual_2", "Oct23_19-43-17_smoke_minich", 500),
-    ("latest", "Oct23_19-43-17_smoke_minich", 500),
+    ("manual_1", -1, -1),
+    ("manual_2", -1, -1),
+    ("latest", -1, -1),
 )
+# POLICY_SPECS = (
+#     ("manual_1", "Oct23_19-43-17_smoke_minich", 500),#最右
+#     ("manual_2", "Oct23_19-43-17_smoke_minich", 500),
+#     ("latest", "Oct23_19-43-17_smoke_minich", 500),
+# )
 STAIR_START_X_M = 0.5
-STAIR_HEIGHT_M = 0.08
+STAIR_HEIGHT_M = 0.1
 STAIR_DEPTH_M = 0.20
 STAIR_COUNT = 20
 ENV_SPACING_M = 1.0
@@ -42,7 +43,7 @@ STAIR_GAIT_FREQUENCY_HZ = 2.0  # 仅回放覆盖；先按训练时的约定加�
 # 前进目标速度：平均值 ± 波动幅度；默认范围 0.4～0.6 m/s。
 # 平均值是波形中心/完整周期均值，不含前后站立阶段。
 FORWARD_SPEED_MEAN_M_S = 0.5
-FORWARD_SPEED_AMPLITUDE_M_S = 0.5  # 半幅；设为 0 可恢复恒速。
+FORWARD_SPEED_AMPLITUDE_M_S = 0.0  # 半幅；设为 0 可恢复恒速。
 FORWARD_SPEED_RATE_M_S2 = 0.4  # 线性上升/下降斜率的绝对值。
 FORWARD_SPEED_WAVEFORM = "linear"  # 当前支持 linear（三角波）；后续可扩展 sine。
 STAND_BEFORE_S = 3.0
@@ -74,7 +75,7 @@ def build_stair_terrain(cfg, num_envs):
     """Exact horizontal treads and vertical risers, plus a sensing height grid.
 
     The collision mesh is constructed directly rather than converting a sampled
-    heightfield, so 20 cm treads and vertical 8 cm faces stay exact.
+    heightfield, so 20 cm treads and vertical 15 cm faces stay exact.
     Mesh coordinates include border_size for the inherited mesh transform.
     """
     y_min = -GROUND_BACK_M
