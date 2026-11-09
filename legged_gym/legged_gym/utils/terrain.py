@@ -35,6 +35,23 @@ from scipy import interpolate
 from isaacgym import terrain_utils
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
 
+
+def long_stair_height(cfg, level):
+    """Per-riser height for a curriculum row; introductory rows stay flat."""
+    if level < cfg.long_stairs_start_level:
+        return 0.0
+    heights = getattr(cfg, "long_stairs_height_levels", None)
+    if heights is None:
+        return cfg.long_stairs_height
+    if not heights or any(not np.isfinite(h) or h <= 0 for h in heights):
+        raise ValueError("Long stair height levels must be finite and positive")
+    if any(b <= a for a, b in zip(heights, heights[1:])):
+        raise ValueError("Long stair height levels must be strictly increasing")
+    if cfg.long_stairs_start_level + len(heights) > cfg.num_rows:
+        raise ValueError("Not enough terrain rows for the long stair height curriculum")
+    return heights[min(level - cfg.long_stairs_start_level, len(heights) - 1)]
+
+
 class Terrain:
     def __init__(self, cfg: LeggedRobotCfg.terrain, num_robots) -> None:
 
@@ -101,8 +118,9 @@ class Terrain:
                         length=self.width_per_env_pixels, vertical_scale=self.cfg.vertical_scale,
                         horizontal_scale=self.cfg.horizontal_scale)
                     if i >= self.cfg.long_stairs_start_level:
-                        long_tread_stairs(terrain, self.cfg.long_stairs_height,
-                                          self.cfg.long_stairs_depth, self.cfg.long_stairs_count)
+                        long_tread_stairs(terrain, long_stair_height(self.cfg, i),
+                                          self.cfg.long_stairs_depth, self.cfg.long_stairs_count,
+                                          approach=getattr(self.cfg, "long_stairs_approach", None))
                 else:
                     terrain = self.make_terrain(choice, difficulty)
                 self.add_terrain_to_map(terrain, i, j)
@@ -204,21 +222,28 @@ def pit_terrain(terrain, depth, platform_size=1.):
     terrain.height_field_raw[x1:x2, y1:y2] = -depth
 
 
-def long_tread_stairs(terrain, step_height=0.08, step_depth=1.2, count=2):
-    """Central flat approach with symmetric +/-X ascending long treads.
+def long_tread_stairs(terrain, step_height=0.08, step_depth=1.2, count=2, approach=None):
+    """Central flat approach with symmetric +/-X ascending stairs.
 
     Round grid dimensions explicitly: int(1.2 / .1) would lose one cell.
+    Approach is center-to-first-riser distance; default preserves legacy geometry.
     Each outer landing must retain at least one full tread before the tile edge.
     """
     rise = int(round(step_height / terrain.vertical_scale))
     depth = int(round(step_depth / terrain.horizontal_scale))
-    if rise <= 0 or depth <= 0 or count < 1 or int(count) != count:
+    approach = step_depth if approach is None else approach
+    if not np.isfinite(approach) or approach <= 0:
+        raise ValueError("Long stair approach must be finite and positive")
+    approach_cells = int(round(approach / terrain.horizontal_scale))
+    if rise <= 0 or depth <= 0 or approach_cells <= 0 or count < 1 or int(count) != count:
         raise ValueError("Invalid long stair dimensions/count")
-    if not np.isclose(rise * terrain.vertical_scale, step_height) or not np.isclose(depth * terrain.horizontal_scale, step_depth):
+    if (not np.isclose(rise * terrain.vertical_scale, step_height)
+            or not np.isclose(depth * terrain.horizontal_scale, step_depth)
+            or not np.isclose(approach_cells * terrain.horizontal_scale, approach)):
         raise ValueError("Long stair dimensions must be representable on the height grid")
     center = terrain.height_field_raw.shape[0] // 2
-    if min(center, terrain.height_field_raw.shape[0] - center) < (count + 1) * depth:
+    if min(center, terrain.height_field_raw.shape[0] - center) < approach_cells + count * depth:
         raise ValueError("Terrain too short for long stairs and full outer landings")
     offset = np.abs(np.arange(terrain.height_field_raw.shape[0]) - center)
-    levels = np.minimum(offset // depth, count)
+    levels = np.clip((offset - approach_cells) // depth + 1, 0, count)
     terrain.height_field_raw[:] = (levels * rise).astype(np.int16)[:, None]

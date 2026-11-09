@@ -44,7 +44,7 @@ from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym.envs.base.base_task import BaseTask
-from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.terrain import Terrain, long_stair_height
 from legged_gym.utils.step_clearance import StepClearance
 from legged_gym.utils.swing_peak_height import SwingPeakHeight
 from legged_gym.utils.stair_step import StairStep
@@ -877,10 +877,12 @@ class LeggedRobot(BaseTask):
         enabled = self.long_stair_mask & (self.terrain_levels >= cfg.long_stairs_start_level)
         local = self.feet_pos - self.env_origins[:, None, :]
         radius = self.cfg.rewards.step_clearance_foot_radius
-        threshold = cfg.long_stairs_count * cfg.long_stairs_depth + radius + cfg.horizontal_scale
+        approach = getattr(cfg, "long_stairs_approach", cfg.long_stairs_depth)
+        threshold = approach + (cfg.long_stairs_count - 1) * cfg.long_stairs_depth + radius + cfg.horizontal_scale
         same_landing = (local[..., 0] >= threshold).all(1) | (local[..., 0] <= -threshold).all(1)
         inside = (local[..., 0].abs() < cfg.terrain_length / 2 - radius).all(1) & (local[..., 1].abs() < cfg.terrain_width / 2 - radius).all(1)
-        high = (local[..., 2] >= cfg.long_stairs_count * cfg.long_stairs_height + radius - .02).all(1)
+        top_height = cfg.long_stairs_count * self.long_stair_step_heights[self.terrain_levels]
+        high = (local[..., 2] >= top_height[:, None] + radius - .02).all(1)
         supported = (self.contact_forces[:, self.feet_indices, 2] > 1.).sum(1) >= 2
         valid = enabled & same_landing & inside & high & supported & (self.projected_gravity[:, 2] < -.7)
         self.long_stair_hold[:] = torch.where(valid, self.long_stair_hold + self.dt, torch.zeros_like(self.long_stair_hold))
@@ -1340,6 +1342,13 @@ class LeggedRobot(BaseTask):
                 long_columns = np.arange(self.cfg.terrain.num_cols) >= ordinary_cols
                 if long_columns.any():
                     self.long_stair_mask = torch.as_tensor(long_columns, device=self.device)[self.terrain_types]
+                    # Start special stairs at the easiest rise, then advance on success.
+                    self.terrain_levels[self.long_stair_mask] = torch.clamp(
+                        self.terrain_levels[self.long_stair_mask], max=self.cfg.terrain.long_stairs_start_level)
+                    self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+                    self.long_stair_step_heights = torch.tensor(
+                        [long_stair_height(self.cfg.terrain, row) for row in range(self.max_terrain_level)],
+                        device=self.device)
                     self.long_stair_success = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
                     self.long_stair_hold = torch.zeros(self.num_envs, device=self.device)
                 proportions = self.terrain.proportions
