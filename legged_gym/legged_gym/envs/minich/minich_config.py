@@ -28,6 +28,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
         long_stairs_success_hold_s = 0.20
 
     class commands(LeggedRobotCfg.commands):
+        long_stairs_forward_only = True
+        long_stairs_speed_range = [0.20, 0.40]  # Positive body-forward speed, m/s.
         curriculum = False  # Former high-speed group now learns low-speed gait.
         gait_training_fraction = 0.20
         gait_training_speed_range = [0.20, 0.50]  # Magnitude; equal forward/backward sampling.

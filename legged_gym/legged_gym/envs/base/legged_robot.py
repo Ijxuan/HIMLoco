@@ -638,6 +638,8 @@ class LeggedRobot(BaseTask):
         self.commands[self._gait_training_mask(), 1] = 0.
         if self.cfg.commands.heading_command:
             self.commands[self._gait_training_mask(), 2] = 0.
+        # Heading control must not overwrite the dedicated straight command.
+        self.commands[self._long_stair_command_mask(), 1:3] = 0.
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights()
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
@@ -686,6 +688,13 @@ class LeggedRobot(BaseTask):
         fraction = getattr(self.cfg.commands, "gait_training_fraction", 0.)
         return torch.arange(self.num_envs, device=self.device) < self.num_envs * fraction
 
+    def _long_stair_command_mask(self):
+        """Dedicated terrain columns, including their flat introductory rows."""
+        if (getattr(self.cfg.commands, "long_stairs_forward_only", False)
+                and hasattr(self, "long_stair_mask")):
+            return self.long_stair_mask
+        return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
     def _resample_commands(self, env_ids):
         """ Randommly select commands of some environments
 
@@ -711,8 +720,9 @@ class LeggedRobot(BaseTask):
         else:
             short_turn = torch.zeros_like(long_turn)
         gait = self._gait_training_mask()[env_ids]
-        long_turn &= ~gait
-        short_turn &= ~gait
+        stairs = self._long_stair_command_mask()[env_ids]
+        long_turn &= ~(gait | stairs)
+        short_turn &= ~(gait | stairs)
         self.in_place_turn_buf[env_ids] = long_turn | short_turn
         in_place_turn_env_ids = env_ids[self.in_place_turn_buf[env_ids]]
         self.commands[in_place_turn_env_ids, :2] = 0.
@@ -734,8 +744,20 @@ class LeggedRobot(BaseTask):
             self.commands[high_vel_env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(high_vel_env_ids), 1), device=self.device).squeeze(1)
             self.commands[high_vel_env_ids, 1:2] *= (torch.norm(self.commands[high_vel_env_ids, 0:1], dim=1) < 1.0).unsqueeze(1)
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= ((torch.norm(self.commands[env_ids, :2], dim=1) > 0.2) | gait).unsqueeze(1)
+        stair_ids = env_ids[stairs]
+        if len(stair_ids):
+            lo, hi = self.cfg.commands.long_stairs_speed_range
+            if not (math.isfinite(lo) and math.isfinite(hi) and 0 < lo <= hi):
+                raise ValueError("Long stair speeds must be finite, positive and ordered")
+            speed = torch_rand_float(lo, hi, (len(stair_ids), 1), device=self.device).squeeze(1)
+            # Explicit zero-command diagnostics must remain stationary.
+            if self.command_ranges["lin_vel_x"] == [0., 0.]:
+                speed.zero_()
+            self.commands[stair_ids, 0] = speed
+            self.commands[stair_ids, 1:3] = 0.
+
+        # Dedicated slow groups are exempt from the ordinary command deadband.
+        self.commands[env_ids, :2] *= ((torch.norm(self.commands[env_ids, :2], dim=1) > 0.2) | gait | stairs).unsqueeze(1)
         if getattr(self.cfg.commands, "enable_turn_to_stand", False):
             self.command_stage[env_ids] = torch.where(
                 self.in_place_turn_buf[env_ids], self.COMMAND_TURN, self.COMMAND_NORMAL)
@@ -745,7 +767,7 @@ class LeggedRobot(BaseTask):
             short_turn_ids = env_ids[short_turn]
             self.command_steps_remaining[short_turn_ids] = self._sample_command_duration(
                 len(short_turn_ids), self.turn_duration_steps)
-        self._sample_stair_stand_commands(env_ids)
+        self._sample_stair_stand_commands(env_ids[~stairs])
 
     def _sample_stair_stand_commands(self, env_ids):
         probability = getattr(self.cfg.commands, "stair_step_stand_probability", 0.)

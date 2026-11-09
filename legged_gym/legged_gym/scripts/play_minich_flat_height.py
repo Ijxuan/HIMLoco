@@ -102,6 +102,7 @@ def configure_flat_sequence_env(env_cfg):
     env_cfg.domain_rand.randomize_restitution = False
     env_cfg.commands.curriculum = False
     env_cfg.commands.enable_turn_to_stand = False
+    env_cfg.commands.long_stairs_forward_only = False
     # Playback supplies its own commands; disable training-only stair stops too.
     env_cfg.commands.stair_step_stand_probability = 0.0
     env_cfg.commands.heading_command = False
