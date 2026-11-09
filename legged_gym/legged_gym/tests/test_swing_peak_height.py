@@ -28,10 +28,10 @@ class TestPeakHeight(unittest.TestCase):
         return credit
 
     def test_curve_sign_peak_continuity(self):
-        h=torch.tensor([0.,.0125,.025,.0375,.05,.065,.08,.095,.11])
+        h=torch.tensor([0.,.0125,.025,.0375,.05,.115,.18,.245,.31])
         expected=torch.tensor([-1.,-.25,0.,.75,1.,.75,0.,-.25,-1.])
         torch.testing.assert_close(peak_height_score(h),expected,atol=1e-6,rtol=1e-6)
-        for edge in [.025,.05,.08]:
+        for edge in [.025,.05,.18]:
             scores=peak_height_score(torch.tensor([edge-1e-7,edge,edge+1e-7]))
             self.assertLess((scores.max()-scores.min()).item(),1e-4)
 
@@ -48,7 +48,7 @@ class TestPeakHeight(unittest.TestCase):
         torch.testing.assert_close(self.step(2),torch.tensor([4.,0.]))
 
     def test_overshoot_not_erased_by_lowering(self):
-        self.step(3);self.contact.zero_();self.h[:]=.11;self.step(4)
+        self.step(3);self.contact.zero_();self.h[:]=.31;self.step(4)
         self.h[:]=.05;self.step();self.contact.fill_(True)
         torch.testing.assert_close(self.step(2),torch.tensor([-4.,0.]))
 
