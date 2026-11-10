@@ -1,6 +1,15 @@
-# 两级短踏面台阶高度课程
+# 专用长楼梯与可选高度课程
 
-MiniChRoughCfg.terrain 默认启用独立的 long_stairs 地形列：
+当前默认已恢复历史设置：单级固定 8 cm、踏面 1.2 m、每侧两级，
+`long_stairs_height_levels=None`，`long_stairs_forward_only=False`。
+初始等级与普通地形同样随机采样 0–5；抬脚奖励仅前 20% 步态组，
+后摆奖励覆盖所有满足命令门槛的环境。详见项目 README 的历史重训说明。
+
+以下记录的是保留实现的**可选短踏面高度课程**，当前默认不启用；
+需显式设置高度表 `[.08,.10,.12,.15,.18]`、踏面 `.20`、首阶距 `1.20`，
+若还需专用直行命令则设置 `long_stairs_forward_only=True`。
+
+MiniChRoughCfg.terrain 的可选高度课程使用独立的 long_stairs 地形列：
 
 - 20 列中最后 3 列（15%）属于此类型。其他 17 列按原类型比例重新离散分配。
 - 等级为从 0 开始的索引；0–1 为平地，2–6 的单级高度依次为
@@ -25,7 +34,7 @@ MiniChRoughCfg.terrain 默认启用独立的 long_stairs 地形列：
 
 ## 专用直行命令
 
-`commands.long_stairs_forward_only = True` 默认开启：专用台阶列（包括等级
+`commands.long_stairs_forward_only = True` 显式开启时：专用台阶列（包括等级
 0–1 的平地预备级）采样正向 `long_stairs_speed_range = [0.20, 0.40]` m/s，
 侧向速度与转向速度目标为零。此组不参与随机转向、转向后站立及楼梯停步采样，
 不受普通命令的 0.2 m/s 清零阈值影响，每步朝向控制也不能覆盖其零转向命令。

@@ -2,7 +2,7 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 
 
 class MiniChRoughCfg(LeggedRobotCfg):
-    """标准 12 自由度 Mini Cheetah rough-terrain 配置。"""
+    """历史最佳 Oct23/model_500 的训练设置重建；依据和限制见 README。"""
 
     class env(LeggedRobotCfg.env):
         num_envs = 4096
@@ -19,17 +19,17 @@ class MiniChRoughCfg(LeggedRobotCfg):
         long_stairs_enabled = True
         long_stairs_fraction = 0.15  # 3 of the default 20 curriculum columns.
         long_stairs_start_level = 2  # Zero-based; rows 0 and 1 remain flat.
-        long_stairs_height = 0.08  # Fallback when height_levels is absent.
-        long_stairs_height_levels = [0.08, 0.10, 0.12, 0.15, 0.18]
-        long_stairs_depth = 0.20
+        long_stairs_height = 0.08  # Fixed height when height_levels is None.
+        long_stairs_height_levels = None  # 历史固定 8 cm；关闭后加的高度课程。
+        long_stairs_depth = 1.20
         long_stairs_count = 2
         long_stairs_approach = 1.20  # Spawn-center to first riser; independent of tread depth.
         long_stairs_spawn_range = 0.25
         long_stairs_success_hold_s = 0.20
 
     class commands(LeggedRobotCfg.commands):
-        long_stairs_forward_only = True
-        long_stairs_speed_range = [0.20, 0.40]  # Positive body-forward speed, m/s.
+        long_stairs_forward_only = False  # 恢复历史普通命令采样。
+        long_stairs_speed_range = [0.20, 0.40]  # 仅专用直行开启时使用；当前关闭。
         curriculum = False  # Former high-speed group now learns low-speed gait.
         gait_training_fraction = 0.20
         gait_training_speed_range = [0.20, 0.50]  # Magnitude; equal forward/backward sampling.
@@ -41,7 +41,6 @@ class MiniChRoughCfg(LeggedRobotCfg):
         stair_step_stand_probability = 0.0  # 关闭楼梯踏步专用的坡面停步采样。
 
         class ranges(LeggedRobotCfg.commands.ranges):
-            lin_vel_x = [-1.0, 1.0]  # 前后速度，m/s
             ang_vel_yaw = [-1.0, 1.0]
 
     class init_state(LeggedRobotCfg.init_state):
@@ -89,13 +88,13 @@ class MiniChRoughCfg(LeggedRobotCfg):
             orientation = -1.2  # Terrain-relative angular cost; retune after training.
             dof_acc = -2.5e-7
             joint_power = -2e-5
-            foot_vertical_force = 0  # -5e-5 ～ -2e-4Initial N^-2 weight; substep mean, then control dt.
+            foot_vertical_force = 0.0  # 历史无此项，关闭后加的足端力惩罚。
             base_height = -30.0
-            com_foot_center = 0.0  # -100   m^-2: 4 cm offset costs 0.04/s before total-reward clipping.
-            step_retraction = 0.15  # Actual long-tread stairs + command gates; per-foot/swing, maximum at 1 cm.后摆
+            com_foot_center = 0.0  # 历史无此项，关闭后加的质心居中惩罚。
+            step_retraction = 0.10  # 历史后摆：全部环境满足命令门槛时生效。
             step_retraction_stall = 0.0  # Unified signed event score replaces process penalties.
             step_clearance = 0  # Bounded per-foot deficit; initial training weight.
-            swing_peak_height = 0.1  # Per foot/swing, actual long-tread stairs + command gates.抬腿
+            swing_peak_height = 0.10  # 历史抬脚：仅前 20% 步态训练组。
             # 关闭楼梯原地踏步奖励，保留实现供显式启用时使用。
             stair_step = 0.0
             stair_step_overdue = 0.0
@@ -107,11 +106,11 @@ class MiniChRoughCfg(LeggedRobotCfg):
             action_rate = -0.01
             smoothness = -0.01
             feet_air_time = 0.0
-            turn_lift_frequency = 0.25  # Disabled in the Sep14 scale baseline.
+            turn_lift_frequency = 0.25  # 历史配置启用原地转向抬脚奖励。
             turn_air_time_overdue = -1.0
             collision = 0.0
             termination = 0.0
-            torques = -2e-4
+            torques = -2e-4  # 当时训练记录确认；历史评估源码中的 0 不作为训练值。
             dof_vel = 0.0
             dof_pos_limits = 0.0
             dof_vel_limits = 0.0
@@ -124,6 +123,7 @@ class MiniChRoughCfg(LeggedRobotCfg):
         # foot XY positions (including swing feet); active on all terrain/commands.
         com_foot_center_deadband = 0.02  # m; cost = max(distance - deadband, 0)^2.
 
+        # 以下楼梯踏步参数仅供显式启用；当前时钟关闭、六项系数全为零。
         # Existing dense costs average four feet; pair deficit sums two groups.
         # All costs are integrated with dt by the reward framework.
         # Clock/costs run on tilted terrain at ALL commands, including zero/yaw.
@@ -155,8 +155,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
         tracking_lin_vel_command_threshold = 0.1  # m/s; inclusive moving gate.
 
         # Training-only swing/edge rewards; actor/export inputs stay unchanged.
-        # Straight swings: 0--1.5 cm, optimum 1 cm; subtract cumulative reverse body travel.
-        step_retraction_distance = 0.0  # Zero score at no effective retraction.
+        # 历史后摆：0.5--1.5 cm，1 cm 最优；扣除机身反向位移。
+        step_retraction_distance = 0.005  # 历史有效后摆下界 5 mm。
         step_retraction_target_distance = 0.010
         step_retraction_max_distance = 0.015  # Maximum WORLD retraction.
         step_retraction_reference_time = 0.30
@@ -178,8 +178,8 @@ class MiniChRoughCfg(LeggedRobotCfg):
         step_clearance_min_speed = 0.10
 
         swing_peak_height_min = 0.025
-        swing_peak_height_target = 0.10
-        swing_peak_height_max = 0.18  # Local clearance: zero at 18 cm, negative above.
+        swing_peak_height_target = 0.05
+        swing_peak_height_max = 0.08  # 历史净空：2.5 cm / 5 cm / 8 cm。
         swing_peak_height_min_air_time = 0.08
         swing_peak_height_timeout = 0.50
         swing_peak_height_stance_time = 0.06
@@ -233,3 +233,4 @@ class MiniChRoughCfgPPO(LeggedRobotCfgPPO):
     class runner(LeggedRobotCfgPPO.runner):
         run_name = ""
         experiment_name = "rough_minich"
+        resume = False  # 默认从头训练；接续历史模型必须显式传 --resume。

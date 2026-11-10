@@ -26,6 +26,8 @@ class TestLongStairs(unittest.TestCase):
     def test_columns_and_levels(self):
         cfg=types.SimpleNamespace(**{k:getattr(MiniChRoughCfg.terrain,k) for k in dir(MiniChRoughCfg.terrain) if not k.startswith('_')})
         cfg.mesh_type='heightfield';cfg.border_size=0.
+        # Explicitly exercise the retained short-tread course, not the legacy default.
+        cfg.long_stairs_height_levels=[.08,.10,.12,.15,.18];cfg.long_stairs_depth=.20
         t=Terrain(cfg,20)
         self.assertEqual(t.long_stair_columns,3)
         for j in range(17,20):
@@ -50,7 +52,8 @@ class TestLongStairs(unittest.TestCase):
 
     def robot(self):
         r=LeggedRobot.__new__(LeggedRobot)
-        r.cfg=MiniChRoughCfg();r.num_envs=3;r.device='cpu';r.dt=.02
+        r.cfg=MiniChRoughCfg();r.cfg.terrain.long_stairs_height_levels=[.08,.10,.12,.15,.18]
+        r.cfg.terrain.long_stairs_depth=.20;r.num_envs=3;r.device='cpu';r.dt=.02
         r.long_stair_mask=torch.tensor([True,True,False])
         r.terrain_levels=torch.tensor([2,2,2]);r.terrain_types=torch.zeros(3,dtype=torch.long)
         r.long_stair_success=torch.zeros(3,dtype=torch.bool);r.long_stair_hold=torch.zeros(3)
@@ -81,6 +84,7 @@ class TestLongStairs(unittest.TestCase):
 
     def test_height_schedule_and_invalid_geometry(self):
         cfg=MiniChRoughCfg().terrain
+        cfg.long_stairs_height_levels=[.08,.10,.12,.15,.18]
         self.assertEqual([long_stair_height(cfg,i) for i in range(2,7)], [.08,.10,.12,.15,.18])
         t=terrain_utils.SubTerrain(width=80,length=80,horizontal_scale=.1,vertical_scale=.005)
         for approach in [0., -.1, .25, 4.]:

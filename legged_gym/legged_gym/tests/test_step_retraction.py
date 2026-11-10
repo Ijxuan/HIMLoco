@@ -274,11 +274,12 @@ class TestStepRetraction(unittest.TestCase):
         self.assertEqual(MiniChRoughCfg.rewards.scales.step_retraction_stall,0.)
 
     def test_zero_lower_bound_landing_scores_and_finite_state(self):
-        self.assertEqual(MiniChRoughCfg.rewards.step_retraction_distance, 0.)
+        class ZeroBounds(MiniChRoughCfg.rewards):
+            step_retraction_distance = 0.
         for distance, expected in [(0., 0.), (.005, .75), (.01, 1.), (.015, 0.), (.02, -1.)]:
             with self.subTest(distance=distance):
                 self.setUp()
-                self.r = StepRetraction(2, 4, 'cpu', MiniChRoughCfg.rewards, .02)
+                self.r = StepRetraction(2, 4, 'cpu', ZeroBounds, .02)
                 self.arm(); self.support.zero_(); self.update(2)
                 self.feet[..., 0] = -distance; self.update(5)
                 self.assertEqual(self.r.progress_reward.sum(), 0.)
@@ -291,7 +292,9 @@ class TestStepRetraction(unittest.TestCase):
                 self.assertEqual(self.r.progress_reward.sum(), 0.)
 
     def test_zero_lower_bound_timeout_remains_negative_once(self):
-        self.r = StepRetraction(2, 4, 'cpu', MiniChRoughCfg.rewards, .02)
+        class ZeroBounds(MiniChRoughCfg.rewards):
+            step_retraction_distance = 0.
+        self.r = StepRetraction(2, 4, 'cpu', ZeroBounds, .02)
         self.arm(); self.support.zero_(); self.update(2)
         self.feet[..., 0] = -.01
         total = torch.zeros(2)
