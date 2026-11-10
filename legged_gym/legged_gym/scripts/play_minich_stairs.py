@@ -31,7 +31,7 @@ POLICY_SPECS = (
 #     ("latest", "Oct23_19-43-17_smoke_minich", 500),
 # )
 STAIR_START_X_M = 0.5
-STAIR_HEIGHT_M = 0.1
+STAIR_HEIGHT_M = 0.15
 STAIR_DEPTH_M = 0.20
 STAIR_COUNT = 20
 ENV_SPACING_M = 1.0
@@ -42,7 +42,7 @@ CALF_KD = 0.8
 STAIR_GAIT_FREQUENCY_HZ = 2.0  # 仅回放覆盖；先按训练时的约定加载模型。
 # 前进目标速度：平均值 ± 波动幅度；默认范围 0.4～0.6 m/s。
 # 平均值是波形中心/完整周期均值，不含前后站立阶段。
-FORWARD_SPEED_MEAN_M_S = 0.25
+FORWARD_SPEED_MEAN_M_S = 0.4
 FORWARD_SPEED_AMPLITUDE_M_S = 0.0  # 半幅；设为 0 可恢复恒速。
 FORWARD_SPEED_RATE_M_S2 = 0.4  # 线性上升/下降斜率的绝对值。
 FORWARD_SPEED_WAVEFORM = "linear"  # 当前支持 linear（三角波）；后续可扩展 sine。
