@@ -169,6 +169,7 @@ class HIMOnPolicyRunner:
         iteration_time = locs['collection_time'] + locs['learn_time']
 
         ep_string = f''
+        stairs_down_level = None
         if locs['ep_infos']:
             # Terrain-specific metrics need not occur in every reset batch.
             keys = dict.fromkeys(key for info in locs['ep_infos'] for key in info)
@@ -182,8 +183,28 @@ class HIMOnPolicyRunner:
                 # Missing metrics are absent observations, not zero successes.
                 value = infotensor.mean()
                 self.writer.add_scalar(episode_scalar_tag(key), value, locs['it'])
+                if key == 'terrain_level_stairs_down':
+                    stairs_down_level = value.item()
                 if not key.startswith(("gait_height/", "gait_retraction/", "retraction_other/")):
                     ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+        if stairs_down_level is not None:
+            # stairs_down is everyday ascent from the central spawn platform.
+            if not hasattr(self, '_stairs_down_level_history'):
+                self._stairs_down_level_history = deque(maxlen=200)
+            history = self._stairs_down_level_history
+            # Compare consecutive training iterations, not sparse valid samples.
+            if history and history[-1][0] != locs['it'] - 1:
+                history.clear()
+            history.append((locs['it'], stairs_down_level))
+            label = '上楼梯等级（stairs_down，100轮对比）'
+            if len(history) == 200:
+                levels = [level for _, level in history]
+                previous = statistics.mean(levels[:100])
+                recent = statistics.mean(levels[100:])
+                ep_string += (f'{label}: 最近100轮={recent:.4f}, '
+                              f'前100轮={previous:.4f}, 增量={recent - previous:+.4f}\n')
+            else:
+                ep_string += f'{label}: 等待连续200轮数据（{len(history)}/200）\n'
         for key, value in summarize_gait_episode_metrics(locs["ep_infos"]).items():
             self.writer.add_scalar(diagnostic_scalar_tag(key), value, locs["it"])
         phase_metrics = locs.get('phase_reward_log', {})

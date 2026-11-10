@@ -5,6 +5,7 @@ import shutil
 
 # Keep training health and recently tuned Mini Cheetah rewards easy to scan.
 STANDALONE_METRICS = frozenset({
+    "上楼梯等级（stairs_down，100轮对比）",
     "Mean reward", "Mean episode length", "Mean action noise std",
     "rew_tracking_lin_vel", "rew_tracking_ang_vel",
     "rew_step_retraction", "rew_swing_peak_height", "rew_foot_vertical_force",
